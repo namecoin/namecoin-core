@@ -5,10 +5,12 @@
 #ifndef H_BITCOIN_NAMES_COMMON
 #define H_BITCOIN_NAMES_COMMON
 
+#include <base58.h>
 #include <compat/endian.h>
 #include <primitives/transaction.h>
 #include <script/script.h>
 #include <serialize.h>
+#include <uint256.h>
 
 #include <map>
 #include <set>
@@ -444,6 +446,44 @@ public:
   /* Write all cached changes to a database batch update object.  */
   void writeBatch (CDBBatch& batch) const;
 
+};
+
+/* ************************************************************************** */
+/* CQueuedTransaction.  */
+
+/**
+ * Keeps track of raw transactions that are queued for later broadcast.
+ * Example use cases:
+ *     Broadcast a name_firstupdate when its input name_new reaches maturity.
+ *     Broadcast a name_update when its input name_anyupdate nears expiration.
+ *     Broadcast a name_firstupdate when someone else's name expires.
+ * This data is serialized to the wallet so that the transaction can be
+ * broadcasted even if the client has restarted since the transaction was
+ * queued.
+ */
+class CQueuedTransaction
+{
+private:
+    uint256 triggerTxid;
+    valtype triggerName;
+    int32_t triggerDepth;
+    valtype tx;
+
+public:
+    SERIALIZE_METHODS(CQueuedTransaction, obj)
+    {
+        READWRITE(obj.triggerTxid, obj.triggerName, obj.triggerDepth, obj.tx);
+    }
+
+    inline const uint256& getTriggerTxid() const { return triggerTxid; }
+    inline const valtype& getTriggerName() const { return triggerName; }
+    inline int32_t getTriggerDepth() const { return triggerDepth; }
+    inline const valtype& getTx() const { return tx; }
+
+    inline void setTriggerTxid(const uint256& val) { triggerTxid = val; }
+    inline void setTriggerName(const valtype& val) { triggerName = val; }
+    inline void setTriggerDepth(const int32_t& val) { triggerDepth = val; }
+    inline void setTx(const valtype& val) { tx = val; }
 };
 
 #endif // H_BITCOIN_NAMES_COMMON

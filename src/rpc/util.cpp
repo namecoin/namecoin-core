@@ -752,7 +752,11 @@ std::string RPCArg::ToStringObj(const bool oneline) const
             res += i.ToString(oneline) + ",";
         }
         return res + "...]";
-    case Type::OBJ:
+    case Type::OBJ: {
+        // Used in Namecoin by queuerawtransaction; unused in Bitcoin.
+        const std::string res_inner = Join(m_inner, ",", [&](const RPCArg& i) { return i.ToStringObj(oneline); });
+        return res + "{" + res_inner + "}";
+    }
     case Type::OBJ_USER_KEYS:
         // Currently unused, so avoid writing dead code
         CHECK_NONFATAL(false);

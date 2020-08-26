@@ -169,6 +169,7 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "name_update", 2, "options" },
     { "namerawtransaction", 1, "vout" },
     { "namerawtransaction", 2, "nameop" },
+    { "queuerawtransaction", 1, "options" },
     { "sendtoname", 1, "amount" },
     { "sendtoname", 4, "subtractfeefromamount" },
 

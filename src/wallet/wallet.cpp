@@ -4247,6 +4247,48 @@ bool CWallet::BackupWallet(const std::string& strDest) const
     return database->Backup(strDest);
 }
 
+bool CWallet::QueuedTransactionExists(const std::string &name)
+{
+    LOCK(cs_wallet);
+    return queuedTransactionMap.count(name) > 0;
+}
+
+bool CWallet::WriteQueuedTransaction(const std::string &name, const valtype &tx, const uint256 &triggerTxid, const valtype &triggerName, const int32_t &triggerDepth)
+{
+    LOCK(cs_wallet);
+    CQueuedTransaction data;
+    data.setTx(tx);
+    data.setTriggerTxid(triggerTxid);
+    data.setTriggerName(triggerName);
+    data.setTriggerDepth(triggerDepth);
+
+    const bool success = WalletBatch(*database).WriteQueuedTransaction(name, data);
+    if(success)
+        queuedTransactionMap[name] = data;
+
+    return success;
+}
+
+bool CWallet::EraseQueuedTransaction(const std::string &name)
+{
+    LOCK(cs_wallet);
+    const bool success = WalletBatch(*database).EraseQueuedTransaction(name);
+    if(success)
+        queuedTransactionMap.erase(name);
+    return success;
+}
+
+bool CWallet::GetQueuedTransaction(const std::string &name, CQueuedTransaction *data)
+{
+    LOCK(cs_wallet);
+    auto it = queuedTransactionMap.find(name);
+    if (it == queuedTransactionMap.end())
+        return false;
+    if (data != nullptr)
+        (*data) = it->second;
+    return true;
+}
+
 CKeyPool::CKeyPool()
 {
     nTime = GetTime();

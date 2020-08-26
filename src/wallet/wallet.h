@@ -9,6 +9,7 @@
 #include <amount.h>
 #include <interfaces/chain.h>
 #include <interfaces/handler.h>
+#include <names/common.h>
 #include <outputtype.h>
 #include <policy/feerate.h>
 #include <psbt.h>
@@ -1300,6 +1301,18 @@ public:
 
     //! Add a descriptor to the wallet, return a ScriptPubKeyMan & associated output type
     ScriptPubKeyMan* AddWalletDescriptor(WalletDescriptor& desc, const FlatSigningProvider& signing_provider, const std::string& label);
+
+    std::map<std::string, CQueuedTransaction> queuedTransactionMap;
+
+    bool QueuedTransactionExists(const std::string &name);
+    bool WriteQueuedTransaction(
+            const std::string &name,
+            const valtype &tx,
+            const uint256 &triggerTxid,
+            const valtype &triggerName,
+            const int32_t &triggerDepth);
+    bool EraseQueuedTransaction(const std::string &name);
+    bool GetQueuedTransaction(const std::string &name, CQueuedTransaction *data=nullptr);
 };
 
 /**
