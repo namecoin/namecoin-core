@@ -49,6 +49,7 @@ public:
     /* Local cache of name table.
      */
     QList<NameTableEntry> cachedNameTable;
+    std::map< std::string, NameTableEntry > cachedNameMap;
 
     /* Query entire name table anew from core.
      */
@@ -101,18 +102,44 @@ public:
             }
         }
 
-        // TODO: use beginInsertRows/nop/beginRemoveRows instead
-        parent.beginResetModel();
-
-        // TODO: edit existing cached table instead of clearing it
-        cachedNameTable.clear();
-
-        // Add existing names
         for (const auto& item : vNamesO)
-            cachedNameTable.append(item.second);
+        {
+            if (cachedNameMap.count(item.first))
+            {
+                // Name is already present, update its data.
+                int editIndex = indexOfName(item.first);
 
-        // TODO: use endInsertRows/dataChanged/endRemoveRows instead
-        parent.endResetModel();
+                cachedNameTable[editIndex] = item.second;
+
+                parent.emitDataChanged(editIndex);
+            }
+            else
+            {
+                // Name is not already present, insert it.
+                parent.beginInsertRows(QModelIndex(), cachedNameTable.size(), cachedNameTable.size());
+
+                cachedNameTable.append(item.second);
+
+                parent.endInsertRows();
+            }
+        }
+
+        for (const auto& item : cachedNameMap)
+        {
+            if (!vNamesO.count(item.first))
+            {
+                // Name needs to be deleted.
+                int removeIndex = indexOfName(item.first);
+
+                parent.beginRemoveRows(QModelIndex(), removeIndex, removeIndex);
+
+                cachedNameTable.removeAt(removeIndex);
+
+                parent.endRemoveRows();
+            }
+        }
+
+        cachedNameMap = vNamesO;
     }
 
     int size()
@@ -130,6 +157,24 @@ public:
         {
             return nullptr;
         }
+    }
+
+    int indexOfName(std::string name)
+    {
+        if (cachedNameTable.isEmpty())
+        {
+            return -1;
+        }
+
+        for (int i = 0; i < cachedNameTable.size(); i++)
+        {
+            if (cachedNameTable.at(i).name.toStdString() == name)
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 };
 
