@@ -1,6 +1,8 @@
 #include <qt/managenamespage.h>
 #include <qt/forms/ui_managenamespage.h>
 
+#include <optional.h>
+#include <qt/configurenamedialog.h>
 #include <qt/csvmodelwriter.h>
 #include <qt/guiutil.h>
 #include <qt/nametablemodel.h>
@@ -24,20 +26,26 @@ ManageNamesPage::ManageNamesPage(const PlatformStyle *platformStyle, QWidget *pa
     // Context menu actions
     copyNameAction = new QAction(tr("Copy &Name"), this);
     copyValueAction = new QAction(tr("Copy &Value"), this);
+    configureNameAction = new QAction(tr("&Configure Name..."), this);
     renewNameAction = new QAction(tr("&Renew Names"), this);
 
     // Build context menu
     contextMenu = new QMenu();
     contextMenu->addAction(copyNameAction);
     contextMenu->addAction(copyValueAction);
+    contextMenu->addAction(configureNameAction);
     contextMenu->addAction(renewNameAction);
 
     // Connect signals for context menu actions
     connect(copyNameAction, &QAction::triggered, this, &ManageNamesPage::onCopyNameAction);
     connect(copyValueAction, &QAction::triggered, this, &ManageNamesPage::onCopyValueAction);
+    connect(configureNameAction, &QAction::triggered, this, &ManageNamesPage::onConfigureNameAction);
     connect(renewNameAction, &QAction::triggered, this, &ManageNamesPage::onRenewNameAction);
 
+    connect(ui->configureNameButton, &QPushButton::clicked, this, &ManageNamesPage::onConfigureNameAction);
     connect(ui->renewNameButton, &QPushButton::clicked, this, &ManageNamesPage::onRenewNameAction);
+
+    connect(ui->tableView, &QTableView::doubleClicked, this, &ManageNamesPage::onConfigureNameAction);
 
     connect(ui->tableView, &QTableView::customContextMenuRequested, this, &ManageNamesPage::contextualMenu);
     ui->tableView->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -79,6 +87,13 @@ void ManageNamesPage::setModel(WalletModel *walletModel)
 
 bool ManageNamesPage::eventFilter(QObject *object, QEvent *event)
 {
+    if (event->type() == QEvent::FocusIn)
+    {
+        if (object == ui->tableView)
+        {
+            ui->configureNameButton->setDefault(true);
+        }
+    }
     return QWidget::eventFilter(object, event);
 }
 
@@ -97,9 +112,11 @@ void ManageNamesPage::selectionChanged()
     // Context menu
     copyNameAction->setEnabled(singleNameSelected);
     copyValueAction->setEnabled(singleNameSelected);
+    configureNameAction->setEnabled(singleNameSelected);
     renewNameAction->setEnabled(anyNamesSelected);
 
     // Buttons
+    ui->configureNameButton->setEnabled(singleNameSelected);
     ui->renewNameButton->setEnabled(anyNamesSelected);
 }
 
@@ -118,6 +135,42 @@ void ManageNamesPage::onCopyNameAction()
 void ManageNamesPage::onCopyValueAction()
 {
     GUIUtil::copyEntryData(ui->tableView, NameTableModel::Value);
+}
+
+void ManageNamesPage::onConfigureNameAction()
+{
+    QModelIndexList indexes = GUIUtil::getEntryData(ui->tableView, NameTableModel::Name);
+
+    if (indexes.isEmpty())
+        return;
+
+    if (indexes.size() != 1)
+        return;
+
+    WalletModel::UnlockContext ctx(walletModel->requestUnlock ());
+    if (!ctx.isValid ())
+        return;
+
+    const QModelIndex &index = indexes.at(0);
+    const QString &name = index.data(Qt::EditRole).toString();
+    const std::string &strName = name.toStdString();
+    const QString &initValue = index.sibling(index.row(), NameTableModel::Value).data(Qt::EditRole).toString();
+
+    ConfigureNameDialog dlg(platformStyle, name, initValue, this);
+    dlg.setModel(walletModel);
+
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+
+    const QString &newValue = dlg.getReturnData();
+    const Optional<QString> &transferToAddress = dlg.getTransferTo();
+
+    const QString err_msg = model->update(name, newValue, transferToAddress);
+    if (!err_msg.isEmpty() && err_msg != "ABORTED")
+    {
+        QMessageBox::critical(this, tr("Name update error"), err_msg);
+        return;
+    }
 }
 
 void ManageNamesPage::onRenewNameAction()

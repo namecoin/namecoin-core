@@ -271,13 +271,25 @@ NameTableModel::emitDataChanged(int idx)
     dataChanged(index(idx, 0), index(idx, columns.length()-1));
 }
 
-QString NameTableModel::renew(const QString &name) const
+QString NameTableModel::update(const QString &name, const Optional<QString> &value, const Optional<QString> &transferTo) const
 {
     std::string strName = name.toStdString();
     LogPrintf ("wallet attempting name_update: name=%s\n", strName);
 
     UniValue params(UniValue::VOBJ);
     params.pushKV ("name", strName);
+
+    if (value)
+    {
+        params.pushKV ("value", value.value().toStdString());
+    }
+
+    if (transferTo)
+    {
+        UniValue options(UniValue::VOBJ);
+        options.pushKV ("destAddress", transferTo.value().toStdString());
+        params.pushKV ("options", options);
+    }
 
     std::string walletURI = ("/wallet/" + walletModel->getWalletName()).toStdString();
 
@@ -292,4 +304,9 @@ QString NameTableModel::renew(const QString &name) const
         return QString::fromStdString(errorStr);
     }
     return tr ("");
+}
+
+QString NameTableModel::renew(const QString &name) const
+{
+    return update(name, {}, {});
 }

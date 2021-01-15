@@ -40,6 +40,7 @@ private:
     QMenu *contextMenu;
     QAction *copyNameAction;
     QAction *copyValueAction;
+    QAction *configureNameAction;
     QAction *renewNameAction;
 
 public Q_SLOTS:
@@ -54,6 +55,7 @@ private Q_SLOTS:
 
     void onCopyNameAction();
     void onCopyValueAction();
+    void onConfigureNameAction();
     void onRenewNameAction();
 };
 
