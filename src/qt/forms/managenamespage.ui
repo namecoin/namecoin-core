@@ -238,7 +238,7 @@ to the network and creates a pending name_firstupdate transaction.</string>
   <customwidget>
    <class>QValidatedLineEdit</class>
    <extends>QLineEdit</extends>
-   <header>../../src/qt/qvalidatedlineedit.h</header>
+   <header>qt/qvalidatedlineedit.h</header>
   </customwidget>
   -->
  </customwidgets>
