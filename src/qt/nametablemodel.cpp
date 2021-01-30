@@ -19,6 +19,15 @@ namespace {
     };
 }
 
+const std::string NameTableEntry::NAME_STATUS_CONFIRMED = "Confirmed";
+const std::string NameTableEntry::NAME_STATUS_EXPIRED = "Expired";
+const std::string NameTableEntry::NAME_STATUS_TRANSFERRED_OUT = "Transferred out";
+const std::string NameTableEntry::NAME_STATUS_REGISTRATION_PENDING = "Registration pending";
+const std::string NameTableEntry::NAME_STATUS_INCOMING_TRANSFER_PENDING = "Incoming transfer pending";
+const std::string NameTableEntry::NAME_STATUS_OUTGOING_TRANSFER_PENDING = "Outgoing transfer pending";
+const std::string NameTableEntry::NAME_STATUS_RENEWAL_PENDING = "Renewal pending";
+const std::string NameTableEntry::NAME_STATUS_UPDATE_PENDING = "Update pending";
+
 // Returns true if new height is better
 bool NameTableEntry::CompareHeight(int nOldHeight, int nNewHeight)
 {
@@ -61,10 +70,6 @@ public:
         std::map< std::string, NameTableEntry > vNamesO;
 
         // confirmed names (name_list)
-        // TODO: Add unconfirmed names once support for this is added to
-        // name_list.
-        // TODO: Filter out expired=true and ismine=false once support for this
-        // is added to name_list.
         // TODO: Set name and value encoding to hex, so that nonstandard
         // encodings don't cause errors.
 
@@ -98,7 +103,152 @@ public:
                 std::string data = maybeData.get_str();
                 int height = find_value ( v, "height").get_int();
                 int expiresIn = find_value ( v, "expires_in").get_int();
-                vNamesO[name] = NameTableEntry(name, data, height, expiresIn, "confirmed");
+
+                bool isMine = find_value ( v, "ismine").get_bool();
+                bool isExpired = find_value ( v, "expired").get_bool();
+                // TODO: Check "op" field
+
+                std::string status = NameTableEntry::NAME_STATUS_CONFIRMED;
+                if (isExpired)
+                {
+                    status = NameTableEntry::NAME_STATUS_EXPIRED;
+                }
+                if (!isMine)
+                {
+                    status = NameTableEntry::NAME_STATUS_TRANSFERRED_OUT;
+                }
+
+                vNamesO[name] = NameTableEntry(name, data, height, expiresIn, status);
+            }
+        }
+
+        UniValue pendingNames;
+        try {
+            pendingNames = parent.walletModel->node().executeRpc("name_pending", NullUniValue, walletURI);
+        } catch (const UniValue& e) {
+            // although we shouldn't typically encounter error here, we
+            // should continue and try to add confirmed names and
+            // pending names. show error to user in case something
+            // actually went wrong so they can potentially recover
+            UniValue message = find_value( e, "message");
+            LogPrintf ("name_pending lookup error: %s\n", message.get_str());
+        }
+
+        // will be an object if name_pending command isn't available/other error
+        if(pendingNames.isArray())
+        {
+            for (const auto& v : pendingNames.getValues())
+            {
+                UniValue maybeName = find_value ( v, "name");
+                UniValue maybeData = find_value ( v, "value");
+                if (!maybeName.isStr() || !maybeData.isStr())
+                {
+                    continue;
+                }
+
+                std::string name = maybeName.get_str();
+                std::string data = maybeData.get_str();
+
+                bool isMine = find_value ( v, "ismine").get_bool();
+                std::string op = find_value ( v, "op").get_str();
+
+                auto confirmedEntryExists = vNamesO.count(name);
+
+                int height = 0;
+                int expiresIn = 0;
+                std::string status;
+
+                if (!confirmedEntryExists)
+                {
+                    if (!isMine)
+                    {
+                        // This name isn't ours, it's just some random name
+                        // that another user has pending.
+                        continue;
+                    }
+
+                    // The name will be ours when it confirms, but it wasn't
+                    // ours before.
+
+                    if (op == "name_firstupdate")
+                    {
+                        // This is a registration, so the reason it wasn't ours
+                        // before is that we hadn't registered it yet.
+                        status = NameTableEntry::NAME_STATUS_REGISTRATION_PENDING;
+                    }
+                    else if (op == "name_update")
+                    {
+                        // This is an update, so we weren't the one to register
+                        // it.  (If we were, there would be a confirmed entry.)
+                        // So this is an incoming transfer.
+                        status = NameTableEntry::NAME_STATUS_INCOMING_TRANSFER_PENDING;
+                    }
+                }
+                else
+                {
+                    // A confirmed entry exists.
+                    auto confirmedEntry = vNamesO[name];
+                    std::string confirmedData = confirmedEntry.value.toStdString();
+                    std::string confirmedStatus = confirmedEntry.nameStatus.toStdString();
+                    height = confirmedEntry.nHeight;
+                    expiresIn = confirmedEntry.expiresIn;
+
+                    if (confirmedStatus == NameTableEntry::NAME_STATUS_EXPIRED || confirmedStatus == NameTableEntry::NAME_STATUS_TRANSFERRED_OUT)
+                    {
+                        if (!isMine)
+                        {
+                            // This name isn't ours, it's just some random name
+                            // that another user has pending.
+                            continue;
+                        }
+
+                        // The name will be ours when it confirms, but it
+                        // wasn't ours before.
+
+                        if (op == "name_firstupdate")
+                        {
+                            // This is a registration, so the reason it wasn't
+                            // ours before is that we hadn't registered it yet.
+                            status = NameTableEntry::NAME_STATUS_REGISTRATION_PENDING;
+                        }
+                        else if (op == "name_update")
+                        {
+                            // This is an update, so we weren't the one to
+                            // register it.  (If we were, there would be a
+                            // confirmed entry.)  So this is an incoming
+                            // transfer.
+                            status = NameTableEntry::NAME_STATUS_INCOMING_TRANSFER_PENDING;
+                        }
+                    }
+                    else if (confirmedStatus == "Confirmed")
+                    {
+                        if (!isMine)
+                        {
+                            // This name was ours, but won't be after this
+                            // transaction confirms.  So this is an outgoing
+                            // transfer.
+                            status = NameTableEntry::NAME_STATUS_OUTGOING_TRANSFER_PENDING;
+                        }
+                        else
+                        {
+                            // This name was ours, and still will be.  So this
+                            // is a pending update.
+
+                            if (data == confirmedData)
+                            {
+                                // Data is unchanged, so this is a renewal.
+                                status = NameTableEntry::NAME_STATUS_RENEWAL_PENDING;
+                            }
+                            else
+                            {
+                                // Data is changed.
+                                status = NameTableEntry::NAME_STATUS_UPDATE_PENDING;
+                            }
+                        }
+                    }
+                }
+
+                vNamesO[name] = NameTableEntry(name, data, height, expiresIn, status);
             }
         }
 

@@ -85,6 +85,15 @@ struct NameTableEntry
     static const int NAME_NON_EXISTING = -2;    // Dummy nHeight value for unitinialized entries
     static const int NAME_UNCONFIRMED = -3;     // Dummy nHeight value for unconfirmed name transactions
 
+    static const std::string NAME_STATUS_CONFIRMED;
+    static const std::string NAME_STATUS_EXPIRED;
+    static const std::string NAME_STATUS_TRANSFERRED_OUT;
+    static const std::string NAME_STATUS_REGISTRATION_PENDING;
+    static const std::string NAME_STATUS_INCOMING_TRANSFER_PENDING;
+    static const std::string NAME_STATUS_OUTGOING_TRANSFER_PENDING;
+    static const std::string NAME_STATUS_RENEWAL_PENDING;
+    static const std::string NAME_STATUS_UPDATE_PENDING;
+
     // NOTE: making this const throws warning indicating it will not be const
     bool HeightValid() { return nHeight >= 0; }
     static bool CompareHeight(int nOldHeight, int nNewHeight);    // Returns true if new height is better
