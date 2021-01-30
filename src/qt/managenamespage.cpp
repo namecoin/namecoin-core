@@ -106,18 +106,30 @@ void ManageNamesPage::selectionChanged()
 
     QModelIndexList indexes = GUIUtil::getEntryData(ui->tableView, NameTableModel::Name);
 
+    bool anyUnspendableSelected = false;
+    for (const QModelIndex& index : indexes)
+    {
+        const std::string &status = index.sibling(index.row(), NameTableModel::NameStatus).data(Qt::EditRole).toString().toStdString();
+
+        if (status == NameTableEntry::NAME_STATUS_EXPIRED || status == NameTableEntry::NAME_STATUS_TRANSFERRED_OUT)
+        {
+            anyUnspendableSelected = true;
+            break;
+        }
+    }
+
     const bool singleNameSelected = indexes.size() == 1;
     const bool anyNamesSelected = indexes.size() >= 1;
 
     // Context menu
     copyNameAction->setEnabled(singleNameSelected);
     copyValueAction->setEnabled(singleNameSelected);
-    configureNameAction->setEnabled(singleNameSelected);
-    renewNameAction->setEnabled(anyNamesSelected);
+    configureNameAction->setEnabled(singleNameSelected && !anyUnspendableSelected);
+    renewNameAction->setEnabled(anyNamesSelected && !anyUnspendableSelected);
 
     // Buttons
-    ui->configureNameButton->setEnabled(singleNameSelected);
-    ui->renewNameButton->setEnabled(anyNamesSelected);
+    ui->configureNameButton->setEnabled(configureNameAction->isEnabled());
+    ui->renewNameButton->setEnabled(renewNameAction->isEnabled());
 }
 
 void ManageNamesPage::contextualMenu(const QPoint &point)
