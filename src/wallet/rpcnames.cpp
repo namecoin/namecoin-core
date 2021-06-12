@@ -33,6 +33,7 @@
 #include <util/vector.h>
 #include <validation.h>
 #include <wallet/coincontrol.h>
+#include <wallet/rpcnames.h>
 #include <wallet/rpcwallet.h>
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/wallet.h>
@@ -354,7 +355,273 @@ saltMatchesHash(const valtype& name, const valtype& rand, const valtype& expecte
     return (Hash160(toHash) == uint160(expectedHash));
 }
 
+bool existsName(const valtype& name, const ChainstateManager& chainman)
+{
+    LOCK(cs_main);
+    const auto& coinsTip = chainman.ActiveChainstate().CoinsTip();
+    CNameData oldData;
+    return (coinsTip.GetName(name, oldData) && !oldData.isExpired());
+}
+
+bool existsName(const std::string& name, const ChainstateManager& chainman)
+{
+    return existsName(valtype(name.begin(), name.end()), chainman);
+}
+
 } // anonymous namespace
+
+/* ************************************************************************** */
+
+RPCHelpMan
+name_autoregister()
+{
+    NameOptionsHelp optHelp;
+    optHelp
+        .withNameEncoding()
+        .withWriteOptions()
+        .withArg("allowExisting", RPCArg::Type::BOOL, "false",
+                 "If set, then the name_new is sent even if the name exists already")
+        .withArg("delegate", RPCArg::Type::BOOL, "false",
+                 "If set, register a dd/ or idd/ name and delegate the name there. Name must be in d/ or id/ namespace.");
+
+    return RPCHelpMan("name_autoregister",
+        "\nAutomatically registers the given name; performs the first half and queues the second."
+            + HELP_REQUIRING_PASSPHRASE,
+        {
+            {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name to register"},
+            {"value", RPCArg::Type::STR, RPCArg::Optional::OMITTED_NAMED_ARG, "Value for the name"},
+            optHelp.buildRpcArg(),
+        },
+        RPCResult {RPCResult::Type::ARR_FIXED, "", "",
+            {
+                {RPCResult::Type::STR_HEX, "txid", "the txid, used in name_firstupdate"},
+                {RPCResult::Type::STR_HEX, "rand", "random value, as in name_firstupdate"},
+            },
+        },
+        RPCExamples {
+            HelpExampleCli("name_autoregister", "\"myname\"")
+            + HelpExampleRpc("name_autoregister", "\"myname\"")
+        },
+        [&] (const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+    std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
+    if (!wallet)
+        return NullUniValue;
+    CWallet* const pwallet = wallet.get();
+
+    RPCTypeCheck(request.params, {UniValue::VSTR, UniValue::VSTR, UniValue::VOBJ});
+    const auto& chainman = EnsureAnyChainman(request.context);
+
+    // build a name_new
+    // broadcast it
+    // build a name_fu with nSequence
+    // queue it
+    // return the txid and rand from name_new, as an array
+    //
+    // if delegate=true:
+    //   build nn1 = d/something
+    //   build nn2 = dd/something (if already exist, something else)
+    //   broadcast nn1,nn2
+    //   build nfu1 = "d/something points to dd/xxx"
+    //   build nfu2 = "d/xxx is the value"
+    //   queue nfu1,nfu2
+    //   return txid from nn1
+
+    UniValue options(UniValue::VOBJ);
+    if (request.params.size () >= 3)
+        options = request.params[2].get_obj();
+    RPCTypeCheckObj(options,
+        {
+            {"allowExisting", UniValueType(UniValue::VBOOL)},
+            {"delegate", UniValueType(UniValue::VBOOL)},
+        },
+        true, false);
+
+    const valtype name = DecodeNameFromRPCOrThrow(request.params[0], options);
+    if (name.size() > MAX_NAME_LENGTH)
+        throw JSONRPCError(RPC_INVALID_PARAMETER, "the name is too long");
+
+    const bool isDefaultVal = (request.params.size() < 2 || request.params[1].isNull());
+    const valtype value = isDefaultVal ?
+        valtype():
+        DecodeValueFromRPCOrThrow(request.params[1], options);
+
+    if (value.size() > MAX_VALUE_LENGTH_UI)
+      throw JSONRPCError(RPC_INVALID_PARAMETER, "the value is too long");
+
+    if (!options["allowExisting"].isTrue())
+    {
+        LOCK(cs_main);
+        if (existsName(name, chainman))
+            throw JSONRPCError(RPC_TRANSACTION_ERROR, "this name exists already");
+    }
+
+    // TODO: farm out to somewhere else for namespace parsing
+
+    bool isDelegated = options["delegate"].isTrue();
+    std::string delegatedName;
+    std::string delegatedValue;
+
+    if (isDelegated)
+    {
+        bool isDomain;
+        bool isIdentity;
+        std::string nameStr(name.begin(), name.end());
+        isDomain   = nameStr.rfind("d/", 0) == 0;
+        isIdentity = nameStr.rfind("id/", 0) == 0;
+
+        if (!isDomain && !isIdentity)
+            throw JSONRPCError(RPC_INVALID_PARAMETER, "delegation requested, but name neither d/ nor id/");
+
+        assert(!(isDomain && isIdentity));
+
+        size_t slashIdx = nameStr.find_first_of('/');
+        assert(slashIdx != std::string::npos);
+
+        std::string mainLabel = nameStr.substr(slashIdx, std::string::npos);
+
+        std::string prefix = isDomain ? "dd" : "idd";
+
+        std::string suffix("");
+
+        // Attempt to generate name like dd/name, dd/name5, dd/name73
+        do {
+            delegatedName = prefix + mainLabel + suffix;
+            valtype rand(1);
+            GetRandBytes(&rand[0], rand.size());
+            suffix += std::string(1, '0' + (rand[0] % 10));
+        } while (existsName(delegatedName, chainman) && delegatedName.size() <= MAX_NAME_LENGTH);
+
+        // Fallback. This could happen if the base name is 254 characters, for instance
+        while (existsName(delegatedName, chainman) || delegatedName.size() > MAX_NAME_LENGTH) {
+            // Attempt to generate name like dd/f7f5fdbd
+            valtype rand(4);
+            GetRandBytes(&rand[0], rand.size());
+            delegatedName = strprintf("%s/%hh02x%hh02x%hh02x%hh02x", prefix, rand[0], rand[1], rand[2], rand[3]);
+            // TODO: Escape properly for JSON.
+        }
+
+        delegatedValue = strprintf("{\"import\":\"%s\"}", delegatedName);
+    }
+
+    UniValue res(UniValue::VARR);
+
+    /* Make sure the results are valid at least up to the most recent block
+       the user could have gotten from another RPC command prior to now.  */
+    pwallet->BlockUntilSyncedToCurrentChain();
+
+    auto issue_nn = [&] (const valtype name, bool push) {
+        LOCK(pwallet->cs_wallet);
+        EnsureWalletIsUnlocked(*pwallet);
+
+        DestinationAddressHelper destHelper(*pwallet);
+        destHelper.setOptions(options);
+
+        const CScript output = destHelper.getScript();
+
+        valtype rand(20);
+        if (!getNameSalt(pwallet, name, output, rand))
+            GetRandBytes(&rand[0], rand.size());
+
+        const CScript newScript
+            = CNameScript::buildNameNew(output, name, rand);
+
+        const UniValue txidVal
+            = SendNameOutput(request, *pwallet, newScript, nullptr, options);
+        destHelper.finalise();
+
+        const std::string randStr = HexStr(rand);
+        const std::string txid = txidVal.get_str();
+        LogPrintf("name_new: name=%s, rand=%s, tx=%s\n",
+                 EncodeNameForMessage(name), randStr.c_str(), txid.c_str());
+
+        if (push) {
+            res.push_back(txid);
+            res.push_back(randStr);
+        }
+
+        return std::make_pair(uint256S(txid), rand);
+    };
+
+    auto queue_nfu = [&] (const valtype name, const valtype value, const auto info) {
+        LOCK(pwallet->cs_wallet);
+        const int TWELVE_PLUS_ONE = 13;
+
+        uint256 txid = info.first;
+        valtype rand = info.second;
+
+        const CWalletTx* wtx = pwallet->GetWalletTx(txid);
+        CTxIn txIn;
+        for (unsigned int i = 0; i < wtx->tx->vout.size(); i++)
+            if (CNameScript::isNameScript(wtx->tx->vout[i].scriptPubKey))
+                txIn = CTxIn(COutPoint(txid, i), wtx->tx->vout[i].scriptPubKey, /* nSequence */ TWELVE_PLUS_ONE);
+                // nSequence = 13 => only broadcast name_firstupdate when name_new is mature (12 blocks)
+                // Note: nSequence is basically ornamental here, see comment below
+
+        EnsureWalletIsUnlocked(*pwallet);
+
+        DestinationAddressHelper destHelper(*pwallet);
+        destHelper.setOptions(options);
+
+        // if delegated, use delegationValue for value, and use value in dd/ name
+        const CScript nameScript
+            = CNameScript::buildNameFirstupdate(destHelper.getScript(), name, value, rand);
+
+        CAmount nFeeRequired = 0;
+        int nChangePosRet = -1;
+        bilingual_str error;
+        CTransactionRef tx;
+        FeeCalculation fee_calc_out;
+
+        CCoinControl coin_control;
+
+        std::vector<CRecipient> recipients;
+        recipients.push_back({nameScript, NAME_LOCKED_AMOUNT, false});
+
+        const bool created_ok = pwallet->CreateTransaction(recipients, &txIn, tx, nFeeRequired, nChangePosRet, error, coin_control, fee_calc_out, /* sign */ false);
+        if (!created_ok)
+            throw JSONRPCError(RPC_WALLET_INSUFFICIENT_FUNDS, error.original);
+            // Not sure if this can ever happen.
+
+        // No need to sign; sigature will be discarded.
+
+        // Kludge: Since CreateTransaction discards nSequence of txIn, manually add it back in again.
+
+        CMutableTransaction mtx(*tx);
+
+        for (unsigned int i = 0; i < mtx.vin.size(); i++)
+            if (mtx.vin[i].prevout == txIn.prevout)
+                mtx.vin[i].nSequence = TWELVE_PLUS_ONE;
+
+        // Sign it for real
+        bool complete = pwallet->SignTransaction(mtx);
+        if (!complete)
+            throw JSONRPCError(RPC_WALLET_ERROR, "Error signing transaction");
+            // This should never happen.
+
+        // TODO: Mark all inputs unspendable.
+
+        const bool queued_ok = pwallet->WriteQueuedTransaction(mtx.GetHash(), mtx);
+        if (!queued_ok)
+            throw JSONRPCError(RPC_WALLET_ERROR, "Error queueing transaction");
+
+        destHelper.finalise();
+    };
+
+    auto info = issue_nn(name, true);
+    if (isDelegated) {
+        auto info2 = issue_nn(valtype(delegatedName.begin(), delegatedName.end()), false);
+        queue_nfu(name, valtype(delegatedValue.begin(), delegatedValue.end()), info);
+        queue_nfu(valtype(delegatedName.begin(), delegatedName.end()), value, info2);
+    }
+    else {
+        queue_nfu(name, value, info);
+    }
+
+    return res;
+}
+  );
+}
 
 /* ************************************************************************** */
 
@@ -408,14 +675,9 @@ name_new ()
   if (name.size () > MAX_NAME_LENGTH)
     throw JSONRPCError (RPC_INVALID_PARAMETER, "the name is too long");
 
-  if (!options["allowExisting"].isTrue ())
-    {
-      LOCK (cs_main);
-      CNameData oldData;
-      const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
-      if (coinsTip.GetName (name, oldData) && !oldData.isExpired ())
-        throw JSONRPCError (RPC_TRANSACTION_ERROR, "this name exists already");
-    }
+  if (!options["allowExisting"].isTrue () &&
+      existsName (name, chainman))
+    throw JSONRPCError (RPC_TRANSACTION_ERROR, "this name exists already");
 
   /* Make sure the results are valid at least up to the most recent block
      the user could have gotten from another RPC command prior to now.  */
@@ -582,15 +844,10 @@ name_firstupdate ()
                           "this name is already being registered");
   }
 
-  if (request.params.size () < 6 || !request.params[5].get_bool ())
-    {
-      LOCK (cs_main);
-      CNameData oldData;
-      const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
-      if (coinsTip.GetName (name, oldData) && !oldData.isExpired ())
-        throw JSONRPCError (RPC_TRANSACTION_ERROR,
-                            "this name is already active");
-    }
+  if ((request.params.size () < 6 || !request.params[5].get_bool ()) &&
+      existsName (name, chainman))
+    throw JSONRPCError (RPC_TRANSACTION_ERROR,
+                        "this name is already active");
 
   uint256 prevTxid = uint256::ZERO; // if it can't find a txid, force an error
   if (fixedTxid)
