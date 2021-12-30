@@ -41,6 +41,11 @@ public:
         NameStatus = 3
     };
 
+    enum RoleIndex {
+        /** Binary data corresponding to name/value */
+        BinaryRole = Qt::UserRole,
+    };
+
     /** @name Methods overridden from QAbstractTableModel
         @{*/
     int rowCount(const QModelIndex &parent = QModelIndex()) const;
