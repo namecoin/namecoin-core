@@ -51,6 +51,9 @@ public:
     Qt::ItemFlags flags(const QModelIndex &index) const;
     /*@}*/
 
+    static QString asciiToHex(const QString &ascii);
+    static QString hexToAscii(const QString &hex);
+
     QString update(const QString &name, const std::optional<QString> &value, const std::optional<QString> &transferTo) const;
     QString renew(const QString &name) const;
 
