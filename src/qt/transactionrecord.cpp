@@ -128,6 +128,14 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const interface
                 // Change is only really possible if we're the sender
                 // Otherwise, someone just sent bitcoins to a change address, which should be shown
                 if (wtx.txout_is_change[i]) {
+                    // Name credits sent to change addresses should not be skipped
+                    if (nNameCredit && CNameScript::isNameScript(txout.scriptPubKey)) {
+                        nameSub.debit = nNet;
+                        nameSub.idx = i;
+                        nameSub.involvesWatchAddress = involvesWatchAddress;
+                        parts.append(nameSub);
+                    }
+
                     continue;
                 }
 
