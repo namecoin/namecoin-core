@@ -5,10 +5,12 @@
 #include <logging.h>
 #include <qt/configurenamedialog.h>
 #include <qt/guiutil.h>
+#include <qt/nametablemodel.h>
 #include <qt/platformstyle.h>
 #include <qt/walletmodel.h>
 #include <rpc/protocol.h>
 
+#include <names/encoding.h>
 #include <univalue.h>
 
 #include <QMessageBox>
@@ -110,7 +112,20 @@ QString BuyNamesPage::name_available(const QString &name) const
     LogPrint(BCLog::QT, "wallet attempting name_show: name=%s\n", strName);
 
     UniValue params(UniValue::VOBJ);
-    params.pushKV ("name", strName);
+
+    try
+    {
+        const QString hexName = NameTableModel::asciiToHex(name);
+        params.pushKV ("name", hexName.toStdString());
+    }
+    catch (const InvalidNameString& exc)
+    {
+        return tr ("Name was invalid ASCII.");
+    }
+
+    UniValue options(UniValue::VOBJ);
+    options.pushKV ("nameEncoding", "hex");
+    params.pushKV ("options", options);
 
     const std::string walletURI = "/wallet/" + walletModel->getWalletName().toStdString();
 
@@ -143,19 +158,41 @@ QString BuyNamesPage::firstupdate(const QString &name, const std::optional<QStri
     LogPrint(BCLog::QT, "wallet attempting name_firstupdate: name=%s\n", strName);
 
     UniValue params(UniValue::VOBJ);
-    params.pushKV ("name", strName);
+
+    try
+    {
+        const QString hexName = NameTableModel::asciiToHex(name);
+        params.pushKV ("name", hexName.toStdString());
+    }
+    catch (const InvalidNameString& exc)
+    {
+        return tr ("Name was invalid ASCII.");
+    }
+
+    UniValue options(UniValue::VOBJ);
+    options.pushKV ("nameEncoding", "hex");
 
     if (value)
     {
-        params.pushKV ("value", value.value().toStdString());
+        try
+        {
+            const QString hexValue = NameTableModel::asciiToHex(value.value());
+            params.pushKV ("value", hexValue.toStdString());
+        }
+        catch (const InvalidNameString& exc)
+        {
+            return tr ("Value was invalid ASCII.");
+        }
+
+        options.pushKV ("valueEncoding", "hex");
     }
 
     if (transferTo)
     {
-        UniValue options(UniValue::VOBJ);
         options.pushKV ("destAddress", transferTo.value().toStdString());
-        params.pushKV ("options", options);
     }
+
+    params.pushKV ("options", options);
 
     const std::string walletURI = "/wallet/" + walletModel->getWalletName().toStdString();
 
