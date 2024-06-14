@@ -162,12 +162,12 @@ void ManageNamesPage::contextualMenu(const QPoint &point)
 
 void ManageNamesPage::onCopyNameAction()
 {
-    GUIUtil::copyEntryData(ui->tableView, NameTableModel::Name);
+    GUIUtil::copyEntryData(ui->tableView, NameTableModel::Name, NameTableModel::BinaryRole);
 }
 
 void ManageNamesPage::onCopyValueAction()
 {
-    GUIUtil::copyEntryData(ui->tableView, NameTableModel::Value);
+    GUIUtil::copyEntryData(ui->tableView, NameTableModel::Value, NameTableModel::BinaryRole);
 }
 
 void ManageNamesPage::onConfigureNameAction()
@@ -185,9 +185,9 @@ void ManageNamesPage::onConfigureNameAction()
         return;
 
     const QModelIndex &index = indexes.at(0);
-    const QString name = index.data(Qt::EditRole).toString();
+    const QString name = index.data(NameTableModel::BinaryRole).toString();
     const std::string strName = name.toStdString();
-    const QString initValue = index.sibling(index.row(), NameTableModel::Value).data(Qt::EditRole).toString();
+    const QString initValue = index.sibling(index.row(), NameTableModel::Value).data(NameTableModel::BinaryRole).toString();
 
     ConfigureNameDialog dlg(platformStyle, name, initValue, this);
     dlg.setModel(walletModel);
@@ -220,7 +220,7 @@ void ManageNamesPage::onRenewNameAction()
     {
         const QString name = indexes.at(0).data(Qt::EditRole).toString();
 
-        msg = tr ("Are you sure you want to renew the name <b>%1</b>?")
+        msg = tr ("Are you sure you want to renew the <b>%1</b>?")
             .arg (GUIUtil::HtmlEscape (name));
         title = tr ("Confirm name renewal");
     }
@@ -243,7 +243,7 @@ void ManageNamesPage::onRenewNameAction()
 
     for (const QModelIndex& index : indexes)
     {
-        const QString name = index.data(Qt::EditRole).toString();
+        const QString name = index.data(NameTableModel::BinaryRole).toString();
 
         const QString err_msg = model->renew(name);
         if (!err_msg.isEmpty() && err_msg != "ABORTED")

@@ -4,6 +4,9 @@
 #include <qt/clientmodel.h>
 #include <qt/transactiontablemodel.h>
 #include <qt/walletmodel.h>
+
+#include <names/applications.h>
+#include <names/encoding.h>
 #include <univalue.h>
 #include <wallet/wallet.h>
 
@@ -410,16 +413,42 @@ QVariant NameTableModel::data(const QModelIndex &index, int role) const
 
     NameTableEntry *rec = static_cast<NameTableEntry*>(index.internalPointer());
 
-    // TODO: implement Qt::ForegroudRole for font color styling for states?
+    // TODO: implement Qt::ForegroundRole for font color styling for states?
     // TODO: implement Qt::ToolTipRole show name status on tooltip
     if(role == Qt::DisplayRole || role == Qt::EditRole)
     {
         switch(index.column())
         {
             case Name:
-                return rec->name;
+            {
+                NameNamespace ns = NamespaceFromName(rec->name.toStdString());
+                std::string strDesc = DescFromName(rec->name.toStdString(), ns);
+                QString desc = QString::fromStdString(strDesc);
+
+                switch(ns)
+                {
+                    case NameNamespace::Domain:
+                        return tr("Domain %1").arg(desc);
+                    case NameNamespace::DomainData:
+                        return tr("Domain data %1").arg(desc);
+                    case NameNamespace::Identity:
+                        return tr("Identity %1").arg(desc);
+                    case NameNamespace::IdentityData:
+                        return tr("Identity data %1").arg(desc);
+                    case NameNamespace::NonStandard:
+                        return tr("Non-standard name %1").arg(desc);
+                } // no default case, so the compiler can warn about missing cases
+                assert(false);
+            }
             case Value:
-                return rec->value;
+            {
+                // TODO: Refactor this function and EncodeNameForMessage to avoid double conversion
+                std::string strValue = rec->value.toStdString();
+                const valtype vtValue = valtype (strValue.begin (), strValue.end ());
+                std::string encodedValue = EncodeNameForMessage(vtValue);
+
+                return QString::fromStdString(encodedValue);
+            }
             case ExpiresIn:
                 return rec->expiresIn;
             case NameStatus:
@@ -429,6 +458,17 @@ QVariant NameTableModel::data(const QModelIndex &index, int role) const
 
     if(role == Qt::TextAlignmentRole)
         return column_alignments[index.column()];
+
+    if(role == BinaryRole)
+    {
+        switch(index.column())
+        {
+            case Name:
+                return rec->name;
+            case Value:
+                return rec->value;
+        }
+    }
 
     return QVariant();
 }
