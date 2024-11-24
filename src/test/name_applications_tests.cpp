@@ -141,4 +141,16 @@ BOOST_AUTO_TEST_CASE( minimal_json )
     BOOST_CHECK_EQUAL(IsMinimalJSONOrEmptyString("{\"bar\":[1, 2, 3]}"), false);
 }
 
+BOOST_AUTO_TEST_CASE( domain_detection )
+{
+    BOOST_CHECK_EQUAL(IsPurportedNamecoinDomain("test.bit"), true);
+
+    BOOST_CHECK_EQUAL(IsPurportedNamecoinDomain("test"), false);
+
+    BOOST_CHECK_EQUAL(IsPurportedNamecoinDomain("test.com"), false);
+
+    const std::string testName = ASCIIFromDomain("test.bit");
+    BOOST_CHECK(testName == "d/test");
+}
+
 BOOST_AUTO_TEST_SUITE_END()
