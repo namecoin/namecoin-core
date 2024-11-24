@@ -9,9 +9,13 @@
 #include <qt/platformstyle.h>
 #include <qt/walletmodel.h>
 #include <rpc/protocol.h>
-
+#include <names/applications.h>
 #include <names/encoding.h>
 #include <univalue.h>
+
+#include <string>
+#include <algorithm>
+#include <exception>
 
 #include <QMessageBox>
 
@@ -25,10 +29,14 @@ BuyNamesPage::BuyNamesPage(const PlatformStyle *platformStyle, QWidget *parent) 
 
     ui->registerNameButton->hide();
 
-    connect(ui->registerName, &QLineEdit::textEdited, this, &BuyNamesPage::onNameEdited);
+    connect(ui->registerNameDomain, &QLineEdit::textEdited, this, &BuyNamesPage::onDomainNameEdited);
+    connect(ui->registerNameAscii, &QLineEdit::textEdited, this, &BuyNamesPage::onAsciiNameEdited);
+    connect(ui->registerNameHex, &QLineEdit::textEdited, this, &BuyNamesPage::onHexNameEdited);
     connect(ui->registerNameButton, &QPushButton::clicked, this, &BuyNamesPage::onRegisterNameAction);
 
-    ui->registerName->installEventFilter(this);
+    ui->registerNameDomain->installEventFilter(this);
+    ui->registerNameAscii->installEventFilter(this);
+    ui->registerNameHex->installEventFilter(this);
 }
 
 BuyNamesPage::~BuyNamesPage()
@@ -45,22 +53,61 @@ bool BuyNamesPage::eventFilter(QObject *object, QEvent *event)
 {
     if (event->type() == QEvent::FocusIn)
     {
-        if (object == ui->registerName)
+        if (object == ui->registerNameAscii)
         {
             ui->registerNameButton->setDefault(true);
         }
+
+        if (object == ui->registerNameHex)
+        {
+            ui->registerNameButton->setDefault(true);
+        }
+
+        if (object == ui->registerNameDomain)
+        {
+            ui->registerNameButton->setDefault(true);
+        }
+
     }
     return QWidget::eventFilter(object, event);
 }
 
-void BuyNamesPage::onNameEdited(const QString &name)
+
+QString BuyNamesPage::DomainToASCII(const QString &name){
+    
+    if(IsPurportedNamecoinDomain(name.toStdString()))
+    {
+        return QString::fromStdString(ASCIIFromDomain(name.toStdString()));
+    }
+    else return QString("");
+}
+
+
+QString BuyNamesPage::ASCIIToDomain(const QString &name){
+    if(NamespaceFromName(name.toStdString()) == NameNamespace::Domain)
+    {
+        return QString::fromStdString(DescFromName(DecodeName(name.toStdString(), NameEncoding::ASCII), NameNamespace::Domain));
+    }
+    else return QString("");
+}
+
+
+QString BuyNamesPage::HexToASCII(const QString &name){
+    return NameTableModel::hexToAscii(name);
+}
+
+
+QString BuyNamesPage::ASCIIToHex(const QString &name){
+    return NameTableModel::asciiToHex(name);
+}
+
+void BuyNamesPage::availableError()
 {
-    if (!walletModel)
-        return;
-
-    const QString availableError = name_available(name);
-
-    if (availableError == "")
+    
+    QString name = ui->registerNameAscii->text();
+    QString availableError = name_available(name);
+    
+    if (availableError.isEmpty())
     {
         ui->statusLabel->setText(tr("%1 is available to register!").arg(name));
         ui->registerNameButton->show();
@@ -72,13 +119,91 @@ void BuyNamesPage::onNameEdited(const QString &name)
     }
 }
 
+void BuyNamesPage::onAsciiNameEdited(const QString &name)
+{
+    if (!walletModel)
+        return;
+
+    try
+    {
+        const QString hexName = ASCIIToHex(name);
+        const QString domainName = ASCIIToDomain(name);
+
+        ui->registerNameHex->setText(hexName);
+        ui->registerNameDomain->setText(domainName);
+
+        availableError();
+    }
+    catch(InvalidNameString &e)
+    {
+        ui->statusLabel->setText(tr("Not a valid ASCII entry!"));
+    }
+
+}
+
+void BuyNamesPage::onHexNameEdited(const QString &name)
+{
+
+    if (!walletModel)
+        return;
+
+
+    try{
+        const QString asciiName = HexToASCII(name);
+        const QString domainName = ASCIIToDomain(asciiName);
+        
+        ui->registerNameAscii->setText(asciiName);
+        ui->registerNameDomain->setText(domainName);
+    
+        availableError();
+    }
+    catch(InvalidNameString &e)
+    {
+        ui->statusLabel->setText(tr("Not a valid entry!"));
+    }
+
+}
+
+void BuyNamesPage::onDomainNameEdited(const QString &name){
+    
+    if (!walletModel)
+        return;
+
+    try
+    {
+        const QString asciiName = DomainToASCII(name);
+        const QString hexName = ASCIIToHex(asciiName);
+
+        ui->registerNameAscii->setText(asciiName);
+        ui->registerNameHex->setText(hexName);
+        
+        if(IsPurportedNamecoinDomain(name.toStdString()))
+        {
+            availableError();
+        }
+        else
+        {
+            ui->statusLabel->setText(tr("%1 is not a valid Namecoin domain!").arg(name));
+            ui->registerNameButton->hide();
+        }
+    }
+    catch(InvalidNameString &e)
+    {
+        ui->statusLabel->setText(tr("Not a valid entry!"));
+    }
+
+
+}
+
 void BuyNamesPage::onRegisterNameAction()
 {
     if (!walletModel)
         return;
 
-    QString name = ui->registerName->text();
-
+    QString input, name;
+    
+    name = ui->registerNameAscii->text();
+    
     WalletModel::UnlockContext ctx(walletModel->requestUnlock());
     if (!ctx.isValid())
         return;
@@ -99,8 +224,9 @@ void BuyNamesPage::onRegisterNameAction()
         return;
     }
 
-    // reset UI text
-    ui->registerName->setText("d/");
+    ui->registerNameDomain->setText("");
+    ui->registerNameAscii->setText("d/");
+    ui->registerNameHex->setText(HexToASCII(QString("d/")));
     ui->registerNameButton->setDefault(true);
 }
 
