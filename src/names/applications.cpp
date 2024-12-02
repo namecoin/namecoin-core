@@ -217,3 +217,16 @@ GetMinimalJSON (const std::string& text){
 
     return v.write(0,0);
 }
+
+std::string
+ConvertDomainForms (const std::string& domain){
+    if(domain.ends_with(".bit")){
+        return domain.substr(0, domain.size()-4);
+    } else if (domain.starts_with("0x")) {
+        std::string cutdomain = domain.substr(2, domain.size());
+        int hexval = std::stoi(cutdomain, 0, 16);
+        return std::to_string(hexval);
+    } else {
+        return domain;
+    }
+}
