@@ -141,4 +141,12 @@ BOOST_AUTO_TEST_CASE( minimal_json )
     BOOST_CHECK_EQUAL(IsMinimalJSONOrEmptyString("{\"bar\":[1, 2, 3]}"), false);
 }
 
+BOOST_AUTO_TEST_CASE( domain_conversion ){
+    BOOST_CHECK_EQUAL(ConvertDomainForms("namecoin"), "namecoin");
+
+    BOOST_CHECK_EQUAL(ConvertDomainForms("namecoin.bit"), "namecoin");
+
+    BOOST_CHECK_EQUAL(ConvertDomainForms("6E616D65636F696E0A"), "namecoin");
+}
+
 BOOST_AUTO_TEST_SUITE_END()
