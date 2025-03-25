@@ -37,7 +37,10 @@ private:
 private Q_SLOTS:
     bool eventFilter(QObject *object, QEvent *event);
 
-    void onNameEdited(const QString &name);
+    void onDomainNameEdited(const QString &name);
+    void onHexNameEdited(const QString &name);
+    void onAsciiNameEdited(const QString &name);
+    
     void onRegisterNameAction();
 };
 
