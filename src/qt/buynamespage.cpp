@@ -9,12 +9,19 @@
 #include <qt/platformstyle.h>
 #include <qt/walletmodel.h>
 #include <rpc/protocol.h>
+#include <names/applications.h>
 
 #include <names/encoding.h>
 #include <univalue.h>
 
+#include <string>
+#include <algorithm>
+
 #include <QMessageBox>
 
+//ascii -> old domain system
+//domain -> domain from scratch (without .bit)
+//hex -> hex
 BuyNamesPage::BuyNamesPage(const PlatformStyle *platformStyle, QWidget *parent) :
     QWidget(parent),
     platformStyle(platformStyle),
@@ -24,11 +31,13 @@ BuyNamesPage::BuyNamesPage(const PlatformStyle *platformStyle, QWidget *parent) 
     ui->setupUi(this);
 
     ui->registerNameButton->hide();
-
-    connect(ui->registerName, &QLineEdit::textEdited, this, &BuyNamesPage::onNameEdited);
+    
+    connect(ui->registerNameDomain, &QLineEdit::textEdited, this, &BuyNamesPage::onDomainNameEdited);
+    connect(ui->registerNameAscii, &QLineEdit::textEdited, this, &BuyNamesPage::onAsciiNameEdited);
+    connect(ui->registerNameHex, &QLineEdit::textEdited, this, &BuyNamesPage::onHexNameEdited);
     connect(ui->registerNameButton, &QPushButton::clicked, this, &BuyNamesPage::onRegisterNameAction);
 
-    ui->registerName->installEventFilter(this);
+    ui->registerNameDomain->installEventFilter(this);
 }
 
 BuyNamesPage::~BuyNamesPage()
@@ -45,7 +54,7 @@ bool BuyNamesPage::eventFilter(QObject *object, QEvent *event)
 {
     if (event->type() == QEvent::FocusIn)
     {
-        if (object == ui->registerName)
+        if (object == ui->registerNameAscii)
         {
             ui->registerNameButton->setDefault(true);
         }
@@ -53,15 +62,76 @@ bool BuyNamesPage::eventFilter(QObject *object, QEvent *event)
     return QWidget::eventFilter(object, event);
 }
 
-void BuyNamesPage::onNameEdited(const QString &name)
+void BuyNamesPage::onAsciiNameEdited(const QString &name)
 {
     if (!walletModel)
         return;
 
-    const QString availableError = name_available(name);
+    QString availableError = name_available(name);
 
     if (availableError == "")
     {
+        ui->statusLabel->setText(tr("%1 is available to register!").arg(name));
+        ui->registerNameButton->show();
+    }
+    else
+    {
+        ui->statusLabel->setText(availableError);
+        ui->registerNameButton->hide();
+    }
+}
+
+void BuyNamesPage::onHexNameEdited(const QString &name)
+{
+
+    if (!walletModel)
+        return;
+
+    QString availableError;
+    //check if it's even a valid hexdomain
+    std::string hex = name.toStdString();
+    if(!std::all_of(hex.begin(), hex.end(), ::isxdigit))
+    {
+        ui->statusLabel->setText(tr("%1 is not a valid hexadecimal entry!").arg(name));
+    } 
+    else 
+    {
+        std::string domain = ConvertDomainForms("0x" + hex);
+        availableError = name_available(QString::fromStdString(domain));
+    }
+    
+    if (availableError == "")
+    {
+        ui->statusLabel->setText(tr("%1 is available to register!").arg(name));
+        ui->registerNameButton->show();
+    }
+    else
+    {
+        ui->statusLabel->setText(availableError);
+        ui->registerNameButton->hide();
+    }
+}
+
+void BuyNamesPage::onDomainNameEdited(const QString &name){
+    
+    if (!walletModel)
+        return;
+
+    QString availableError;
+    std::string domain = name.toStdString();
+    //check if it even ends with .bit
+    if(!name.toStdString().ends_with(".bit"))
+    {
+        ui->statusLabel->setText(tr("%1 does not end with .bit!").arg(name));
+    } else {
+        domain = ConvertDomainForms(domain);
+        availableError = name_available(QString::fromStdString(domain));
+    }
+
+    if (availableError == "")
+    {
+
+        const std::string domain = ConvertDomainForms(name.toStdString());
         ui->statusLabel->setText(tr("%1 is available to register!").arg(name));
         ui->registerNameButton->show();
     }
@@ -77,7 +147,60 @@ void BuyNamesPage::onRegisterNameAction()
     if (!walletModel)
         return;
 
-    QString name = ui->registerName->text();
+    //check which tab we're on
+    int currentTab = ui->tabWidget->currentIndex();
+
+    QString input, name;
+    QMessageBox::StandardButton ErrorBox;
+
+    //just do the conversion here...
+    switch(currentTab) {
+        case 0:
+            {
+                //strip off .bit
+                input = ui->registerNameDomain->text();
+                std::string domain = input.toStdString();
+                if(!domain.ends_with(".bit")){
+                    ErrorBox = QMessageBox::critical(this, tr("Invalid Namecoin Domain"),
+                                tr("The inputted domain does not end with .bit."), QMessageBox::Cancel);
+                    return;
+                } else {
+                    name = QString::fromStdString(ConvertDomainForms(domain));
+                }
+            }
+
+            break;
+
+        case 1:
+            {
+                //no changes needed
+                input = ui->registerNameAscii->text();
+                name = input;
+                break;
+            }
+        case 2:
+            {
+                //check if valid hex
+                input = ui->registerNameHex->text();
+                std::string hex = input.toStdString();
+
+                if(!std::all_of(hex.begin(), hex.end(), ::isxdigit)){
+                    ErrorBox = QMessageBox::critical(this, tr("Invalid Hex Value"),
+                                tr("The inputted hex value is invalid."), QMessageBox::Cancel);
+     
+                    return;
+                } else {
+                    std::string domain = ConvertDomainForms("0x" + input.toStdString());
+                    name = QString::fromStdString(domain);
+                }
+            }
+
+            break;
+
+        default:
+            //how did we get here?
+            break;
+    }
 
     WalletModel::UnlockContext ctx(walletModel->requestUnlock());
     if (!ctx.isValid())
@@ -100,7 +223,9 @@ void BuyNamesPage::onRegisterNameAction()
     }
 
     // reset UI text
-    ui->registerName->setText("d/");
+    ui->registerNameDomain->setText("");
+    ui->registerNameAscii->setText("d/");
+    ui->registerNameHex->setText("642f");
     ui->registerNameButton->setDefault(true);
 }
 
