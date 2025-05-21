@@ -29,4 +29,6 @@ bool IsMinimalJSONOrEmptyString (const std::string& text);
 
 std::string GetMinimalJSON (const std::string& text);
 
+std::string ConvertDomainForms (const std::string& domain);
+
 #endif // H_BITCOIN_NAMES_APPLICATIONS
