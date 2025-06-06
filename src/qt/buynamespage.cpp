@@ -13,10 +13,6 @@
 #include <names/encoding.h>
 #include <univalue.h>
 
-#include <string>
-#include <algorithm>
-#include <exception>
-
 #include <QMessageBox>
 
 BuyNamesPage::BuyNamesPage(const PlatformStyle *platformStyle, QWidget *parent) :
@@ -101,7 +97,7 @@ QString BuyNamesPage::ASCIIToHex(const QString &name){
     return NameTableModel::asciiToHex(name);
 }
 
-void BuyNamesPage::availableError()
+void BuyNamesPage::refreshAvailableError()
 {
     
     QString name = ui->registerNameAscii->text();
@@ -132,7 +128,7 @@ void BuyNamesPage::onAsciiNameEdited(const QString &name)
         ui->registerNameHex->setText(hexName);
         ui->registerNameDomain->setText(domainName);
 
-        availableError();
+        refreshAvailableError();
     }
     catch(InvalidNameString &e)
     {
@@ -147,7 +143,6 @@ void BuyNamesPage::onHexNameEdited(const QString &name)
     if (!walletModel)
         return;
 
-
     try{
         const QString asciiName = HexToASCII(name);
         const QString domainName = ASCIIToDomain(asciiName);
@@ -155,7 +150,7 @@ void BuyNamesPage::onHexNameEdited(const QString &name)
         ui->registerNameAscii->setText(asciiName);
         ui->registerNameDomain->setText(domainName);
     
-        availableError();
+        refreshAvailableError();
     }
     catch(InvalidNameString &e)
     {
@@ -179,11 +174,11 @@ void BuyNamesPage::onDomainNameEdited(const QString &name){
         
         if(IsPurportedNamecoinDomain(name.toStdString()))
         {
-            availableError();
+            refreshAvailableError();
         }
         else
         {
-            ui->statusLabel->setText(tr("%1 is not a valid Namecoin domain!").arg(name));
+            ui->statusLabel->setText(tr("\"%1\" requires .bit at the end to be a valid Namecoin domain!").arg(name));
             ui->registerNameButton->hide();
         }
     }
