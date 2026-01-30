@@ -45,7 +45,11 @@ def main():
         "-DWITH_USDT=ON",
         "-DCMAKE_CXX_FLAGS=-Wno-error=unused-member-function",
     ])
-    run(["cmake", "--build", "build", "-j", str(num_procs)])
+
+    if run(["cmake", "--build", "build", "-j", str(num_procs)], check=False).returncode != 0:
+        print("Build failure. Verbose build follows.")
+        run(["cmake", "--build", "build", "-j1", "--verbose"])
+
     run([
         "ctest",
         "--output-on-failure",
