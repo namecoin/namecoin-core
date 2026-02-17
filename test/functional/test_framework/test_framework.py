@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import json
 import logging
 import os
+import pathlib
 import platform
 import pdb
 import random
@@ -72,9 +73,18 @@ class Binaries:
             binaries, which takes precedence over the paths above, if specified.
             This is used by tests calling binaries from previous releases.
     """
-    def __init__(self, paths, bin_dir):
+    def __init__(self, paths, bin_dir, *, use_valgrind=False):
         self.paths = paths
         self.bin_dir = bin_dir
+        suppressions_file = pathlib.Path(__file__).parents[3] / "contrib" / "valgrind.supp"
+        self.valgrind_cmd = [
+            "valgrind",
+            f"--suppressions={suppressions_file}",
+            "--gen-suppressions=all",
+            "--exit-on-first-error=yes",
+            "--error-exitcode=1",
+            "--quiet",
+        ] if use_valgrind else []
 
     def node_argv(self, **kwargs):
         "Return argv array that should be used to invoke bitcoind"
@@ -102,20 +112,26 @@ class Binaries:
         return self._argv("chainstate", self.paths.bitcoinchainstate)
 
     def _argv(self, command, bin_path, need_ipc=False):
-        """Return argv array that should be used to invoke the command. It
-        either uses the bitcoin wrapper executable (if BITCOIN_CMD is set or
+        """Return argv array that should be used to invoke the command.
+
+        It either uses the bitcoin wrapper executable (if BITCOIN_CMD is set or
         need_ipc is True), or the direct binary path (bitcoind, etc). When
         bin_dir is set (by tests calling binaries from previous releases) it
-        always uses the direct path."""
+        always uses the direct path.
+
+        The returned args include valgrind, except when bin_dir is set
+        (previous releases). Also, valgrind will only apply to the bitcoin
+        wrapper executable directly, not to the commands that `bitcoin` calls.
+        """
         if self.bin_dir is not None:
             return [os.path.join(self.bin_dir, os.path.basename(bin_path))]
         elif self.paths.bitcoin_cmd is not None or need_ipc:
             # If the current test needs IPC functionality, use the bitcoin
             # wrapper binary and append -m so it calls multiprocess binaries.
             bitcoin_cmd = self.paths.bitcoin_cmd or [self.paths.bitcoin_bin]
-            return bitcoin_cmd + (["-m"] if need_ipc else []) + [command]
+            return self.valgrind_cmd + bitcoin_cmd + (["-m"] if need_ipc else []) + [command]
         else:
-            return [bin_path]
+            return self.valgrind_cmd + [bin_path]
 
 
 class BitcoinTestMetaClass(type):
@@ -247,7 +263,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         parser.add_argument("--perf", dest="perf", default=False, action="store_true",
                             help="profile running nodes with perf for the duration of the test")
         parser.add_argument("--valgrind", dest="valgrind", default=False, action="store_true",
-                            help="run nodes under the valgrind memory error detector: expect at least a ~10x slowdown. valgrind 3.14 or later required. Does not apply to previous release binaries.")
+                            help="Run binaries under the valgrind memory error detector: Expect at least a ~10x slowdown. Does not apply to previous release binaries or binaries called from the bitcoin wrapper executable.")
         parser.add_argument("--randomseed", type=int,
                             help="set a random seed for deterministically reproducing a previous test run")
         parser.add_argument("--timeout-factor", dest="timeout_factor", type=float, help="adjust test timeouts by a factor. Setting it to 0 disables all timeouts")
@@ -305,7 +321,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         return paths
 
     def get_binaries(self, bin_dir=None):
-        return Binaries(self.binary_paths, bin_dir)
+        return Binaries(self.binary_paths, bin_dir, use_valgrind=self.options.valgrind)
 
     def setup(self):
         """Call this method to start up the test framework object with options set."""
@@ -578,7 +594,6 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                 extra_args=args,
                 use_cli=self.options.usecli,
                 start_perf=self.options.perf,
-                use_valgrind=self.options.valgrind,
                 v2transport=self.options.v2transport,
                 uses_wallet=self.uses_wallet,
             )
