@@ -81,6 +81,7 @@ class Binaries:
             "valgrind",
             f"--suppressions={suppressions_file}",
             "--gen-suppressions=all",
+            "--trace-children=yes",  # Needed for 'bitcoin' wrapper
             "--exit-on-first-error=yes",
             "--error-exitcode=1",
             "--quiet",
@@ -263,7 +264,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         parser.add_argument("--perf", dest="perf", default=False, action="store_true",
                             help="profile running nodes with perf for the duration of the test")
         parser.add_argument("--valgrind", dest="valgrind", default=False, action="store_true",
-                            help="Run binaries under the valgrind memory error detector: Expect at least a ~10x slowdown. Does not apply to previous release binaries or binaries called from the bitcoin wrapper executable.")
+                            help="Run binaries under the valgrind memory error detector: Expect at least a ~10x slowdown. Does not apply to previous release binaries.")
         parser.add_argument("--randomseed", type=int,
                             help="set a random seed for deterministically reproducing a previous test run")
         parser.add_argument("--timeout-factor", dest="timeout_factor", type=float, help="adjust test timeouts by a factor. Setting it to 0 disables all timeouts")
