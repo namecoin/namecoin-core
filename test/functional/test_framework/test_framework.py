@@ -250,7 +250,7 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
                             help="The seed to use for assigning port numbers (default: current process id)")
         parser.add_argument("--previous-releases", dest="prev_releases", action="store_true",
                             default=os.path.isdir(previous_releases_path) and bool(os.listdir(previous_releases_path)),
-                            help="Force test of previous releases (default: %(default)s)")
+                            help="Force test of previous releases (default: %(default)s). Previous releases binaries can be downloaded via `test/get_previous_releases.py`.")
         parser.add_argument("--coveragedir", dest="coveragedir",
                             help="Write tested RPC commands into this directory")
         parser.add_argument("--configfile", dest="configfile",
@@ -559,18 +559,6 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         bin_dirs = []
         for v in versions:
             bin_dir = bin_dir_from_version(v)
-
-            # Fail test if any of the needed release binaries is missing
-            for bin_path in (argv[0] for binaries in (self.get_binaries(bin_dir),)
-                                     for argv in (binaries.node_argv(), binaries.rpc_argv())):
-
-                if shutil.which(bin_path) is None:
-                    self.log.error(f"Binary not found: {bin_path}")
-                    if v is None:
-                        raise AssertionError("At least one binary is missing, did you compile?")
-                    raise AssertionError("At least one release binary is missing. "
-                                         "Previous releases binaries can be downloaded via `test/get_previous_releases.py`.")
-
             bin_dirs.append(bin_dir)
 
         extra_init = [{}] * num_nodes if self.extra_init is None else self.extra_init # type: ignore[var-annotated]
@@ -1064,8 +1052,8 @@ class BitcoinTestFramework(metaclass=BitcoinTestMetaClass):
         """Checks whether previous releases are present and enabled."""
         if not os.path.isdir(self.options.previous_releases_path):
             if self.options.prev_releases:
-                raise AssertionError("Force test of previous releases but releases missing: {}".format(
-                    self.options.previous_releases_path))
+                raise AssertionError(f"Force test of previous releases but releases missing: {self.options.previous_releases_path}\n"
+                                     "Previous releases binaries can be downloaded via `test/get_previous_releases.py`.")
         return self.options.prev_releases
 
     def skip_if_no_external_signer(self):
