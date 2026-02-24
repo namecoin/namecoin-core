@@ -31,13 +31,22 @@ private:
     Ui::BuyNamesPage *ui;
     WalletModel *walletModel;
 
+    QString DomainToASCII(const QString &name);
+    QString ASCIIToDomain(const QString &name);
+    QString HexToASCII(const QString &name);
+    QString ASCIIToHex(const QString &name);
+    void RefreshAvailableError();
+
     QString name_available(const QString &name) const;
     QString firstupdate(const QString &name, const std::optional<QString> &value, const std::optional<QString> &transferTo) const;
 
 private Q_SLOTS:
     bool eventFilter(QObject *object, QEvent *event);
 
-    void onNameEdited(const QString &name);
+    void onDomainNameEdited(const QString &name);
+    void onHexNameEdited(const QString &name);
+    void onAsciiNameEdited(const QString &name);
+
     void onRegisterNameAction();
 };
 
