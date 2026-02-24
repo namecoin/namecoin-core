@@ -97,33 +97,79 @@
        </widget>
       </item>
       <item>
-       <widget class="QPushButton" name="registerNameButton">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="minimumSize">
-         <size>
-          <width>150</width>
-          <height>0</height>
-         </size>
-        </property>
-        <property name="toolTip">
-         <string>Register the name.  You must have already pre-registered it.</string>
-        </property>
-        <property name="text">
-         <string>&amp;Register Name&#8230;</string>
-        </property>
-        <property name="icon">
-         <iconset resource="../bitcoin.qrc">
-          <normaloff>:/icons/send</normaloff>:/icons/send</iconset>
-        </property>
-        <property name="default">
-         <bool>true</bool>
-        </property>
-       </widget>
+       <layout class="QHBoxLayout" name="availableHorizontalLayout">
+        <item>
+         <widget class="QPushButton" name="preRegisterNameButton">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>150</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="toolTip">
+           <string>Pre-Register the name.  You must do this before registering it.</string>
+          </property>
+          <property name="text">
+           <string>&amp;Pre-Register Name&#8230;</string>
+          </property>
+          <property name="icon">
+           <iconset resource="../bitcoin.qrc">
+            <normaloff>:/icons/send</normaloff>:/icons/send</iconset>
+          </property>
+          <property name="default">
+           <bool>false</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="registerNameButton">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>150</width>
+            <height>0</height>
+           </size>
+          </property>
+          <property name="toolTip">
+           <string>Register the name.  You must have already pre-registered it.</string>
+          </property>
+          <property name="text">
+           <string>&amp;Register Name&#8230;</string>
+          </property>
+          <property name="icon">
+           <iconset resource="../bitcoin.qrc">
+            <normaloff>:/icons/send</normaloff>:/icons/send</iconset>
+          </property>
+          <property name="default">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="availableSpacer">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>40</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
       </item>
       <item>
        <spacer name="verticalSpacer">
