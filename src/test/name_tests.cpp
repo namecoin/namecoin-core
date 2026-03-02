@@ -1,4 +1,4 @@
-// Copyright (c) 2014-2025 Daniel Kraft
+// Copyright (c) 2014-2026 Daniel Kraft
 // Distributed under the MIT/X11 software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -16,6 +16,7 @@
 #include <undo.h>
 #include <validation.h>
 
+#include <test/util/common.h>
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>

@@ -298,7 +298,7 @@ ChainTestingSetup::ChainTestingSetup(const ChainType chainType, TestOpts opts)
         m_node.chainman = std::make_unique<ChainstateManager>(*Assert(m_node.shutdown_signal), chainman_opts, blockman_opts);
     };
     m_make_chainman();
-    m_node.mining = interfaces::MakeMining(m_node);
+    m_node.mining = interfaces::MakeMining(m_node, /*wait_loaded=*/false);
 }
 
 ChainTestingSetup::~ChainTestingSetup()
@@ -630,36 +630,4 @@ CBlock getBlock13b8a()
     };
     stream >> TX_WITH_WITNESS(block);
     return block;
-}
-
-//! equality test
-bool operator==(const Coin &a, const Coin &b) {
-    // Empty Coin objects are always equal.
-    if (a.IsSpent() && b.IsSpent()) return true;
-    return a.fCoinBase == b.fCoinBase &&
-           a.nHeight == b.nHeight &&
-           a.out == b.out;
-}
-
-std::ostream& operator<<(std::ostream& os, const arith_uint256& num)
-{
-    return os << num.ToString();
-}
-
-std::ostream& operator<<(std::ostream& os, const uint160& num)
-{
-    return os << num.ToString();
-}
-
-std::ostream& operator<<(std::ostream& os, const uint256& num)
-{
-    return os << num.ToString();
-}
-
-std::ostream& operator<<(std::ostream& os, const Txid& txid) {
-    return os << txid.ToString();
-}
-
-std::ostream& operator<<(std::ostream& os, const Wtxid& wtxid) {
-    return os << wtxid.ToString();
 }

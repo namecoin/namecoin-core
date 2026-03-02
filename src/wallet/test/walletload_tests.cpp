@@ -4,6 +4,7 @@
 
 #include <wallet/test/util.h>
 #include <wallet/wallet.h>
+#include <test/util/common.h>
 #include <test/util/logging.h>
 #include <test/util/setup_common.h>
 

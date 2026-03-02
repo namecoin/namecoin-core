@@ -38,6 +38,29 @@ GENERATE_OPTIONS = {
 }
 
 
+def github_import_vs_env(_ci_type):
+    vswhere_path = Path(os.environ["ProgramFiles(x86)"]) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe"
+    installation_path = run(
+        [str(vswhere_path), "-latest", "-property", "installationPath"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    vsdevcmd = Path(installation_path) / "Common7" / "Tools" / "vsdevcmd.bat"
+    comspec = os.environ["COMSPEC"]
+    output = run(
+        f'"{comspec}" /s /c ""{vsdevcmd}" -arch=x64 -no_logo && set"',
+        capture_output=True,
+        text=True,
+    ).stdout
+    github_env = os.environ["GITHUB_ENV"]
+    with open(github_env, "a") as env_file:
+        for line in output.splitlines():
+            if "=" not in line:
+                continue
+            name, value = line.split("=", 1)
+            env_file.write(f"{name}={value}\n")
+
+
 def generate(ci_type):
     command = [
         "cmake",
@@ -50,7 +73,7 @@ def generate(ci_type):
     run(command)
 
 
-def build():
+def build(_ci_type):
     command = [
         "cmake",
         "--build",
@@ -180,26 +203,18 @@ def run_tests(ci_type):
 def main():
     parser = argparse.ArgumentParser(description="Utility to run Windows CI steps.")
     parser.add_argument("ci_type", choices=GENERATE_OPTIONS, help="CI type to run.")
-    steps = [
-        "generate",
-        "build",
-        "check_manifests",
-        "prepare_tests",
-        "run_tests",
-    ]
+    steps = list(map(lambda f: f.__name__, [
+        github_import_vs_env,
+        generate,
+        build,
+        check_manifests,
+        prepare_tests,
+        run_tests,
+    ]))
     parser.add_argument("step", choices=steps, help="CI step to perform.")
     args = parser.parse_args()
 
-    if args.step == "generate":
-        generate(args.ci_type)
-    elif args.step == "build":
-        build()
-    elif args.step == "check_manifests":
-        check_manifests(args.ci_type)
-    elif args.step == "prepare_tests":
-        prepare_tests(args.ci_type)
-    elif args.step == "run_tests":
-        run_tests(args.ci_type)
+    exec(f'{args.step}("{args.ci_type}")')
 
 
 if __name__ == "__main__":

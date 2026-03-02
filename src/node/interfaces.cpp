@@ -950,10 +950,10 @@ public:
 
     std::optional<BlockRef> waitTipChanged(uint256 current_tip, MillisecondsDouble timeout) override
     {
-        return WaitTipChanged(chainman(), notifications(), current_tip, timeout);
+        return WaitTipChanged(chainman(), notifications(), current_tip, timeout, m_interrupt_mining);
     }
 
-    std::unique_ptr<BlockTemplate> createNewBlock(const BlockCreateOptions& options) override
+    std::unique_ptr<BlockTemplate> createNewBlock(const BlockCreateOptions& options, bool cooldown) override
     {
         // Reject too-small values instead of clamping so callers don't silently
         // end up mining with different options than requested. This matches the
@@ -966,11 +966,33 @@ public:
         }
 
         // Ensure m_tip_block is set so consumers of BlockTemplate can rely on that.
-        if (!waitTipChanged(uint256::ZERO, MillisecondsDouble::max())) return {};
+        std::optional<BlockRef> maybe_tip{waitTipChanged(uint256::ZERO, MillisecondsDouble::max())};
+
+        if (!maybe_tip) return {};
+
+        if (cooldown) {
+            // Do not return a template during IBD, because it can have long
+            // pauses and sometimes takes a while to get started. Although this
+            // is useful in general, it's gated behind the cooldown argument,
+            // because on regtest and single miner signets this would wait
+            // forever if no block was mined in the past day.
+            while (chainman().IsInitialBlockDownload()) {
+                maybe_tip = waitTipChanged(maybe_tip->hash, MillisecondsDouble{1000});
+                if (!maybe_tip || chainman().m_interrupt || WITH_LOCK(notifications().m_tip_block_mutex, return m_interrupt_mining)) return {};
+            }
+
+            // Also wait during the final catch-up moments after IBD.
+            if (!CooldownIfHeadersAhead(chainman(), notifications(), *maybe_tip, m_interrupt_mining)) return {};
+        }
 
         BlockAssembler::Options assemble_options{options};
         ApplyArgsManOptions(*Assert(m_node.args), assemble_options);
         return std::make_unique<BlockTemplateImpl>(assemble_options, BlockAssembler{chainman().ActiveChainstate(), context()->mempool.get(), assemble_options}.CreateNewBlock(), m_node);
+    }
+
+    void interrupt() override
+    {
+        InterruptWait(notifications(), m_interrupt_mining);
     }
 
     bool checkBlock(const CBlock& block, const node::BlockCheckOptions& options, std::string& reason, std::string& debug) override
@@ -985,6 +1007,8 @@ public:
     NodeContext* context() override { return &m_node; }
     ChainstateManager& chainman() { return *Assert(m_node.chainman); }
     KernelNotifications& notifications() { return *Assert(m_node.notifications); }
+    // Treat as if guarded by notifications().m_tip_block_mutex
+    bool m_interrupt_mining{false};
     NodeContext& m_node;
 };
 } // namespace
@@ -993,5 +1017,17 @@ public:
 namespace interfaces {
 std::unique_ptr<Node> MakeNode(node::NodeContext& context) { return std::make_unique<node::NodeImpl>(context); }
 std::unique_ptr<Chain> MakeChain(node::NodeContext& context) { return std::make_unique<node::ChainImpl>(context); }
-std::unique_ptr<Mining> MakeMining(node::NodeContext& context) { return std::make_unique<node::MinerImpl>(context); }
+std::unique_ptr<Mining> MakeMining(node::NodeContext& context, bool wait_loaded)
+{
+    if (wait_loaded) {
+        node::KernelNotifications& kernel_notifications(*Assert(context.notifications));
+        util::SignalInterrupt& interrupt(*Assert(context.shutdown_signal));
+        WAIT_LOCK(kernel_notifications.m_tip_block_mutex, lock);
+        kernel_notifications.m_tip_block_cv.wait(lock, [&]() EXCLUSIVE_LOCKS_REQUIRED(kernel_notifications.m_tip_block_mutex) {
+            return kernel_notifications.m_state.chainstate_loaded || interrupt;
+        });
+        if (interrupt) return nullptr;
+    }
+    return std::make_unique<node::MinerImpl>(context);
+}
 } // namespace interfaces
