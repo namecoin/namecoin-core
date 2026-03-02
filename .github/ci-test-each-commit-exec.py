@@ -10,10 +10,11 @@ import shlex
 
 def run(cmd, **kwargs):
     print("+ " + shlex.join(cmd), flush=True)
+    kwargs.setdefault("check", True)
     try:
-        return subprocess.run(cmd, check=True, **kwargs)
+        return subprocess.run(cmd, **kwargs)
     except Exception as e:
-        sys.exit(e)
+        sys.exit(str(e))
 
 
 def main():
@@ -44,7 +45,11 @@ def main():
         "-DWITH_USDT=ON",
         "-DCMAKE_CXX_FLAGS=-Wno-error=unused-member-function",
     ])
-    run(["cmake", "--build", "build", "-j", str(num_procs)])
+
+    if run(["cmake", "--build", "build", "-j", str(num_procs)], check=False).returncode != 0:
+        print("Build failure. Verbose build follows.")
+        run(["cmake", "--build", "build", "-j1", "--verbose"])
+
     run([
         "ctest",
         "--output-on-failure",
