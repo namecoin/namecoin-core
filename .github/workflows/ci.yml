@@ -59,6 +59,8 @@ jobs:
     name: 'test ancestor commits'
     needs: runners
     runs-on: ${{ needs.runners.outputs.provider == 'cirrus' && 'ghcr.io/cirruslabs/ubuntu-runner-amd64:24.04-md' || 'ubuntu-24.04' }}
+    env:
+      TEST_RUNNER_PORT_MIN: "14000"  # Use a larger port, to avoid colliding with CIRRUS_CACHE_HOST port 12321.
     if: github.event_name == 'pull_request' && github.event.pull_request.commits != 1
     timeout-minutes: 360  # Use maximum time, see https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions#jobsjob_idtimeout-minutes.
     steps:
@@ -236,26 +238,19 @@ jobs:
 
       - *CHECKOUT
 
-      - &SET_UP_VS
-        name: Set up VS Developer Prompt
-        shell: pwsh -Command "$PSVersionTable; $PSNativeCommandUseErrorActionPreference = $true; $ErrorActionPreference = 'Stop'; & '{0}'"
-        run: |
-          $vswherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $installationPath = & $vswherePath -latest -property installationPath
-          & "${env:COMSPEC}" /s /c "`"$installationPath\Common7\Tools\vsdevcmd.bat`" -arch=x64 -no_logo && set" | foreach-object {
-            $name, $value = $_ -split '=', 2
-            echo "$name=$value" >> $env:GITHUB_ENV
-          }
+      - &IMPORT_VS_ENV
+        name: Import Visual Studio env vars
+        run: py -3 .github/ci-windows.py "standard" github_import_vs_env
 
       - name: Get tool information
-        shell: pwsh
         run: |
-          cmake -version | Tee-Object -FilePath "cmake_version"
-          Write-Output "---"
-          msbuild -version | Tee-Object -FilePath "msbuild_version"
-          $env:VCToolsVersion | Tee-Object -FilePath "toolset_version"
+          set -o errexit -o pipefail -o xtrace -o nounset
+
+          cmake -version | tee cmake_version
+          echo '---'
+          msbuild.exe -version | tee msbuild_version
+          echo "${VCToolsVersion-}" | tee toolset_version
           py -3 --version
-          Write-Host "PowerShell version $($PSVersionTable.PSVersion.ToString())"
           bash --version
 
       - name: Using vcpkg with MSBuild
@@ -296,7 +291,8 @@ jobs:
 
       - name: Save vcpkg tools cache
         uses: actions/cache/save@v5
-        if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && steps.vcpkg-tools-cache.outputs.cache-hit != 'true'
+        # Only save cache from one job as they share tools. If the matrix is expanded to jobs with unique tools, this may need amending.
+        if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch && steps.vcpkg-tools-cache.outputs.cache-hit != 'true' && matrix.job-type == 'standard'
         with:
           path: C:/vcpkg/downloads/tools
           key: ${{ github.job }}-vcpkg-tools-${{ github.run_id }}
@@ -427,7 +423,7 @@ jobs:
       - name: Run bitcoind.exe
         run: py -3 .github/ci-windows-cross.py print_version
 
-      - *SET_UP_VS
+      - *IMPORT_VS_ENV
 
       - name: Check executable manifests
         run: py -3 .github/ci-windows-cross.py check_manifests

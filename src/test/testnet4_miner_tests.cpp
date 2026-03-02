@@ -22,7 +22,7 @@ namespace testnet4_miner_tests {
 struct Testnet4MinerTestingSetup : public Testnet4Setup {
     std::unique_ptr<Mining> MakeMining()
     {
-        return interfaces::MakeMining(m_node);
+        return interfaces::MakeMining(m_node, /*wait_loaded=*/false);
     }
 };
 } // namespace testnet4_miner_tests
@@ -42,7 +42,7 @@ BOOST_AUTO_TEST_CASE(MiningInterface)
     const int64_t genesis_time{WITH_LOCK(cs_main, return m_node.chainman->ActiveChain().Tip()->GetBlockTime())};
     SetMockTime(genesis_time + 3 * 60);
 
-    block_template = mining->createNewBlock(options);
+    block_template = mining->createNewBlock(options, /*cooldown=*/false);
     BOOST_REQUIRE(block_template);
 
     // The template should use the mocked system time

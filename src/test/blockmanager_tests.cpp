@@ -14,6 +14,7 @@
 #include <validation.h>
 
 #include <boost/test/unit_test.hpp>
+#include <test/util/common.h>
 #include <test/util/logging.h>
 #include <test/util/setup_common.h>
 
