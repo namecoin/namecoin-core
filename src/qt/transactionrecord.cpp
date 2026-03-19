@@ -175,33 +175,39 @@ QList<TransactionRecord> TransactionRecord::decomposeTransaction(const interface
                 // Credit
                 //
 
-                TransactionRecord sub(hash, nTime);
-                sub.idx = i; // vout index
-                sub.credit = txout.nValue;
-                if (wtx.txout_address_is_mine[i])
+                // For incoming name transfers, show a single name
+                // operation row instead of a regular currency credit.
+                if (nNameCredit && CNameScript::isNameScript(txout.scriptPubKey))
                 {
-                    // Received by Bitcoin Address
-                    sub.type = TransactionRecord::RecvWithAddress;
-                    sub.address = EncodeDestination(wtx.txout_address[i]);
+                    nameSub.idx = i;
+                    nameSub.debit = nNet;
+                    parts.append(nameSub);
                 }
                 else
                 {
-                    // Received by IP connection (deprecated features), or a multisignature or other non-simple transaction
-                    sub.type = TransactionRecord::RecvFromOther;
-                    sub.address = mapValue["from"];
-                }
-                if (wtx.is_coinbase)
-                {
-                    // Generated
-                    sub.type = TransactionRecord::Generated;
-                }
+                    TransactionRecord sub(hash, nTime);
+                    sub.idx = i; // vout index
+                    sub.credit = txout.nValue;
+                    if (wtx.txout_address_is_mine[i])
+                    {
+                        // Received by Bitcoin Address
+                        sub.type = TransactionRecord::RecvWithAddress;
+                        sub.address = EncodeDestination(wtx.txout_address[i]);
+                    }
+                    else
+                    {
+                        // Received by IP connection (deprecated features), or a multisignature or other non-simple transaction
+                        sub.type = TransactionRecord::RecvFromOther;
+                        sub.address = mapValue["from"];
+                    }
+                    if (wtx.is_coinbase)
+                    {
+                        // Generated
+                        sub.type = TransactionRecord::Generated;
+                    }
 
-                parts.append(sub);
-            }
-
-            if (nNameCredit) {
-                nameSub.debit = nNet;
-                parts.append(nameSub);
+                    parts.append(sub);
+                }
             }
         }
     } else {
