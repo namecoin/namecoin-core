@@ -5,7 +5,7 @@
 """Test wallet createwalletdescriptor RPC."""
 
 from test_framework.descriptors import descsum_create
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
@@ -22,6 +22,8 @@ class WalletCreateDescriptorTest(BitcoinTestFramework):
         self.skip_if_no_wallet()
 
     def run_test(self):
+        # Namecoin: Taproot (bech32m) is not active
+        raise SkipTest("Taproot (bech32m) is not active on Namecoin")
         self.test_basic()
         self.test_imported_other_keys()
         self.test_encrypted()

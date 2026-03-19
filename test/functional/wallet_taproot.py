@@ -10,7 +10,7 @@ import uuid
 from decimal import Decimal
 from test_framework.address import output_key_to_p2tr
 from test_framework.key import H_POINT
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.util import assert_equal
 from test_framework.descriptors import descsum_create
 from test_framework.script import (
@@ -391,6 +391,8 @@ class WalletTaprootTest(BitcoinTestFramework):
         self.do_test_psbt(comment, pattern, privmap, treefn, keys[2*nkeys:3*nkeys], keys[3*nkeys:4*nkeys])
 
     def run_test(self):
+        # Namecoin: Taproot (bech32m) is not active
+        raise SkipTest("Taproot (bech32m) is not active on Namecoin")
         self.nodes[0].createwallet(wallet_name="boring")
         self.boring = self.nodes[0].get_wallet_rpc("boring")
 
