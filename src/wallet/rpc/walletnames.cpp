@@ -37,6 +37,7 @@
 #include <wallet/rpc/util.h>
 #include <wallet/rpc/wallet.h>
 #include <wallet/scriptpubkeyman.h>
+#include <wallet/spend.h>
 #include <wallet/wallet.h>
 
 #include <univalue.h>
@@ -176,6 +177,19 @@ SendNameOutput (const JSONRPCRequest& request,
 
   CCoinControl coinControl;
   return SendMoney (wallet, coinControl, nameInput, vecSend, {}, false);
+}
+
+/**
+ * Checks whether a name exists (is registered and not expired).
+ * Acquires cs_main internally.
+ */
+bool
+existsName (const ChainstateManager& chainman, const valtype& name)
+{
+  LOCK (cs_main);
+  CNameData data;
+  const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
+  return coinsTip.GetName (name, data) && !data.isExpired (chainman.ActiveHeight ());
 }
 
 } // anonymous namespace
@@ -418,11 +432,7 @@ name_new ()
 
   if (!options["allowExisting"].isTrue ())
     {
-      LOCK (cs_main);
-      CNameData oldData;
-      const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
-      if (coinsTip.GetName (name, oldData)
-            && !oldData.isExpired (chainman.ActiveHeight ()))
+      if (existsName (chainman, name))
         throw JSONRPCError (RPC_TRANSACTION_ERROR, "this name exists already");
     }
 
@@ -591,11 +601,7 @@ name_firstupdate ()
 
   if (request.params.size () < 6 || !request.params[5].get_bool ())
     {
-      LOCK (cs_main);
-      CNameData oldData;
-      const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
-      if (coinsTip.GetName (name, oldData)
-            && !oldData.isExpired (chainman.ActiveHeight ()))
+      if (existsName (chainman, name))
         throw JSONRPCError (RPC_TRANSACTION_ERROR,
                             "this name is already active");
     }
@@ -801,14 +807,15 @@ name_update ()
 
   if (outp.IsNull ())
     {
-      LOCK (cs_main);
-
-      CNameData oldData;
-      const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
-      if (!coinsTip.GetName (name, oldData)
-            || oldData.isExpired (chainman.ActiveHeight ()))
+      if (!existsName (chainman, name))
         throw JSONRPCError (RPC_TRANSACTION_ERROR,
                             "this name can not be updated");
+
+      LOCK (cs_main);
+      CNameData oldData;
+      const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
+      const bool found = coinsTip.GetName (name, oldData);
+      assert (found);
       if (isDefaultVal)
         value = oldData.getValue();
       outp = oldData.getUpdateOutpoint ();
@@ -836,6 +843,255 @@ name_update ()
   destHelper.finalise ();
 
   return txidVal;
+}
+  );
+}
+
+/* ************************************************************************** */
+
+namespace
+{
+
+/**
+ * Helper class for name_autoregister.  Encapsulates the state and logic
+ * for creating the name_new transaction, building the name_firstupdate
+ * transaction with a relative locktime, queuing it, and locking the
+ * name_new output.
+ */
+class AutoregisterHelper
+{
+
+private:
+
+  const JSONRPCRequest& request;
+  CWallet& wallet;
+  ChainstateManager& chainman;
+  NodeContext& node;
+
+  valtype name;
+  valtype value;
+
+  /** The txid of the name_new transaction.  */
+  uint256 newTxid;
+
+  /** The random salt used in the name_new.  */
+  valtype rand;
+
+  /** The destination script for both transactions.  */
+  CScript destScript;
+
+  /** The destination address helper.  */
+  DestinationAddressHelper destHelper;
+
+public:
+
+  AutoregisterHelper (const JSONRPCRequest& req, CWallet& w,
+                      ChainstateManager& cm, NodeContext& n,
+                      const valtype& nm, const valtype& val,
+                      const UniValue& options)
+    : request(req), wallet(w), chainman(cm), node(n),
+      name(nm), value(val), destHelper(w)
+  {
+    destHelper.setOptions (options);
+    destScript = destHelper.getScript ();
+  }
+
+  /** Create and broadcast the name_new transaction.  */
+  void createNameNew (const UniValue& options);
+
+  /** Build, sign, and queue the name_firstupdate transaction.  */
+  void createAndQueueFirstUpdate ();
+
+  /** Lock the name script output of the name_new transaction.  */
+  void lockNameNewOutput ();
+
+  /** Finalise the destination address reservation.  */
+  void finalise () { destHelper.finalise (); }
+
+  uint256 getNewTxid () const { return newTxid; }
+  const valtype& getRand () const { return rand; }
+
+};
+
+void
+AutoregisterHelper::createNameNew (const UniValue& options)
+{
+  rand.resize (20);
+  if (!getNameSalt (&wallet, name, destScript, rand))
+    GetRandBytes (&rand[0], rand.size ());
+
+  const CScript newScript
+    = CNameScript::buildNameNew (destScript, name, rand);
+
+  const UniValue txidVal
+    = SendNameOutput (request, wallet, newScript, nullptr, options);
+
+  newTxid = ParseHashV (txidVal, "txid");
+}
+
+void
+AutoregisterHelper::createAndQueueFirstUpdate ()
+{
+  /* Build the name_firstupdate script.  */
+  const CScript nfuScript
+    = CNameScript::buildNameFirstupdate (destScript, name, value, rand);
+
+  /* Find the name_new output to spend.  */
+  CTxOut prevOut;
+  CTxIn txIn;
+  {
+    LOCK (cs_main);
+    if (!getNamePrevout (chainman.ActiveChainstate (), newTxid, prevOut, txIn))
+      throw JSONRPCError (RPC_TRANSACTION_ERROR,
+                          "could not find name_new output");
+  }
+
+  /* Create the firstupdate transaction.  We need to set nSequence on the
+     input spending the name_new output to enforce relative locktime
+     (12 blocks maturity + 1).  CreateTransaction discards nSequence,
+     so we set it manually after creation.  */
+  std::vector<CRecipient> vecSend;
+  vecSend.push_back ({nfuScript, NAME_LOCKED_AMOUNT, false});
+
+  CCoinControl coinControl;
+  CTransactionRef tx;
+  CAmount nFeeRet;
+  int nChangePosInOut = -1;
+  bilingual_str error;
+  FeeCalculation feeCalc;
+
+  if (!CreateTransaction (wallet, vecSend, &txIn, tx, nFeeRet,
+                          nChangePosInOut, error, coinControl, feeCalc, true))
+    throw JSONRPCError (RPC_WALLET_ERROR,
+                        "failed to create name_firstupdate: " + error.original);
+
+  /* Fix up nSequence on the name_new input.  */
+  CMutableTransaction mtx(*tx);
+  for (auto& input : mtx.vin)
+    {
+      if (input.prevout.hash == newTxid)
+        {
+          input.nSequence = 13; /* 12 blocks maturity + 1 */
+          break;
+        }
+    }
+
+  /* Re-sign after modifying nSequence.  */
+  if (!wallet.SignTransaction (mtx))
+    throw JSONRPCError (RPC_WALLET_ERROR,
+                        "failed to sign name_firstupdate transaction");
+
+  const uint256 nfuTxid = CTransaction(mtx).GetHash ();
+  if (!wallet.WriteQueuedTransaction (nfuTxid, mtx))
+    throw JSONRPCError (RPC_WALLET_ERROR,
+                        "failed to queue name_firstupdate transaction");
+}
+
+void
+AutoregisterHelper::lockNameNewOutput ()
+{
+  const auto wtx = wallet.GetWalletTx (newTxid);
+  if (!wtx)
+    return;
+
+  for (unsigned int i = 0; i < wtx->tx->vout.size (); ++i)
+    {
+      if (CNameScript::isNameScript (wtx->tx->vout[i].scriptPubKey))
+        {
+          wallet.LockCoin (COutPoint (newTxid, i));
+          break;
+        }
+    }
+}
+
+} // anonymous namespace
+
+RPCHelpMan
+name_autoregister ()
+{
+  NameOptionsHelp optHelp;
+  optHelp
+      .withNameEncoding ()
+      .withValueEncoding ()
+      .withWriteOptions ();
+
+  return RPCHelpMan ("name_autoregister",
+      "\nRegisters a name atomically.  Performs name_new and queues name_firstupdate"
+      "\nfor automatic broadcast after the required maturity period."
+          + HELP_REQUIRING_PASSPHRASE,
+      {
+          {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name to register"},
+          {"value", RPCArg::Type::STR, RPCArg::Optional::OMITTED_NAMED_ARG, "Value for the name"},
+          optHelp.buildRpcArg (),
+      },
+      RPCResult {RPCResult::Type::OBJ, "", "",
+          {
+              {RPCResult::Type::STR_HEX, "txid", "the txid of the name_new transaction"},
+              {RPCResult::Type::STR_HEX, "rand", "the random value used"},
+          },
+      },
+      RPCExamples {
+          HelpExampleCli ("name_autoregister", "\"myname\"")
+        + HelpExampleCli ("name_autoregister", "\"myname\" \"my-value\"")
+        + HelpExampleRpc ("name_autoregister", "\"myname\", \"my-value\"")
+      },
+      [&] (const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+  std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest (request);
+  if (!wallet)
+    return NullUniValue;
+  CWallet* const pwallet = wallet.get ();
+
+  RPCTypeCheck (request.params, {UniValue::VSTR, UniValue::VSTR, UniValue::VOBJ},
+                true);
+  auto& node = EnsureAnyNodeContext (request);
+  auto& chainman = EnsureChainman (node);
+
+  UniValue options(UniValue::VOBJ);
+  if (request.params.size () >= 3)
+    options = request.params[2].get_obj ();
+
+  const valtype name = DecodeNameFromRPCOrThrow (request.params[0], options);
+  if (name.size () > MAX_NAME_LENGTH)
+    throw JSONRPCError (RPC_INVALID_PARAMETER, "the name is too long");
+
+  if (existsName (chainman, name))
+    throw JSONRPCError (RPC_TRANSACTION_ERROR, "this name exists already");
+
+  const bool isDefaultVal = (request.params.size () < 2 || request.params[1].isNull ());
+  const valtype value = isDefaultVal
+    ? valtype ()
+    : DecodeValueFromRPCOrThrow (request.params[1], options);
+
+  if (value.size () > MAX_VALUE_LENGTH_UI)
+    throw JSONRPCError (RPC_INVALID_PARAMETER, "the value is too long");
+
+  /* Make sure the results are valid at least up to the most recent block
+     the user could have gotten from another RPC command prior to now.  */
+  pwallet->BlockUntilSyncedToCurrentChain ();
+
+  LOCK (pwallet->cs_wallet);
+  EnsureWalletIsUnlocked (*pwallet);
+
+  AutoregisterHelper helper(request, *pwallet, chainman, node,
+                            name, value, options);
+
+  helper.createNameNew (options);
+  helper.createAndQueueFirstUpdate ();
+  helper.lockNameNewOutput ();
+  helper.finalise ();
+
+  const std::string randStr = HexStr (helper.getRand ());
+  const std::string txid = helper.getNewTxid ().GetHex ();
+
+  LogPrintf ("name_autoregister: name=%s, rand=%s, tx=%s\n",
+             EncodeNameForMessage (name), randStr.c_str (), txid.c_str ());
+
+  UniValue res(UniValue::VOBJ);
+  res.pushKV ("txid", txid);
+  res.pushKV ("rand", randStr);
+
+  return res;
 }
   );
 }
