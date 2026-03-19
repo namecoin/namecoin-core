@@ -1548,7 +1548,6 @@ void CWallet::blockConnected(const ChainstateRole& role, const interfaces::Block
         wallet_updated |= SyncTransaction(block.data->vtx[index], TxStateConfirmed{block.hash, block.height, static_cast<int>(index)});
         transactionRemovedFromMempool(block.data->vtx[index], MemPoolRemovalReason::BLOCK);
     }
-    EffectTransactionQueue();
 
     // Update on disk if this block resulted in us updating a tx, or periodically every 144 blocks (~1 day)
     if (wallet_updated || block.height % 144 == 0) {
@@ -3355,72 +3354,6 @@ bool CWallet::BackupWallet(const std::string& strDest) const
     return GetDatabase().Backup(strDest);
 }
 
-bool CWallet::QueuedTransactionExists(const Txid& txid) const
-{
-    AssertLockHeld(cs_wallet);
-    return queuedTransactionMap.count(txid) > 0;
-}
-
-bool CWallet::WriteQueuedTransaction(const Txid &txid, const CMutableTransaction &tx)
-{
-    AssertLockHeld(cs_wallet);
-
-    const bool success = WalletBatch(GetDatabase()).WriteQueuedTransaction(txid, tx);
-    if(success)
-        queuedTransactionMap[txid] = tx;
-
-    return success;
-}
-
-bool CWallet::EraseQueuedTransaction(const Txid& txid)
-{
-    AssertLockHeld(cs_wallet);
-    const bool success = WalletBatch(GetDatabase()).EraseQueuedTransaction(txid);
-    if(success)
-        queuedTransactionMap.erase(txid);
-    return success;
-}
-
-bool CWallet::GetQueuedTransaction(const Txid &txid, CMutableTransaction *data) const
-{
-    AssertLockHeld(cs_wallet);
-    auto it = queuedTransactionMap.find(txid);
-    if (it == queuedTransactionMap.end())
-        return false;
-    if (data != nullptr)
-        (*data) = it->second;
-    return true;
-}
-
-void CWallet::EffectTransactionQueue()
-{
-    // This is called when we get a new block to deal with queued transactions.
-    if (chain().isInitialBlockDownload())
-        return;
-    // We only do this for fresh blocks. Otherwise, we might trigger way too early.
-    std::set<Txid> to_dequeue;
-    // Kludge; we can't remove items in a map while iterating over it.
-    AssertLockHeld(cs_wallet);
-    for (const auto& i : queuedTransactionMap)
-    // For each transaction in the queue...
-    {
-        const Txid& txid = i.first;
-        const CMutableTransaction& tx = i.second;
-
-        std::string unused_err_string;
-        if (chain().broadcastTransaction(MakeTransactionRef(tx), m_default_max_tx_fee, node::TxBroadcast::MEMPOOL_AND_BROADCAST_TO_ALL, unused_err_string))
-        // attempt to broadcast
-        {
-            to_dequeue.emplace(txid);
-            WalletLogPrintf("Broadcast queued transaction with txid %s, %s", txid.GetHex(), CTransaction(tx).ToString().c_str());
-            // No newline here, since tx's ToString contains one.
-        }
-        // If the transaction isn't yet valid, there's nothing to do.
-    }
-
-    for (const auto& i : to_dequeue)
-        queuedTransactionMap.erase(i);
-}
 
 int CWallet::GetTxDepthInMainChain(const CWalletTx& wtx) const
 {

@@ -909,9 +909,7 @@ RPCHelpMan name_list();
 RPCHelpMan name_new();
 RPCHelpMan name_firstupdate();
 RPCHelpMan name_update();
-RPCHelpMan queuerawtransaction();
-RPCHelpMan dequeuetransaction();
-RPCHelpMan listqueuedtransactions();
+
 RPCHelpMan sendtoname();
 
 std::span<const CRPCCommand> GetWalletRPCCommands()
@@ -984,9 +982,7 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"names", &name_new},
         {"names", &name_firstupdate},
         {"names", &name_update},
-        {"names", &queuerawtransaction},
-        {"names", &dequeuetransaction},
-        {"names", &listqueuedtransactions},
+
         {"names", &sendtoname},
     };
     return commands;

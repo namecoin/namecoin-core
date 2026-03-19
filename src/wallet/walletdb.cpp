@@ -51,7 +51,6 @@ const std::string OLD_KEY{"wkey"};
 const std::string ORDERPOSNEXT{"orderposnext"};
 const std::string POOL{"pool"};
 const std::string PURPOSE{"purpose"};
-const std::string QUEUED_TX{"queued_tx"};
 const std::string SETTINGS{"settings"};
 const std::string TX{"tx"};
 const std::string VERSION{"version"};
@@ -295,16 +294,6 @@ bool WalletBatch::WriteLockedUTXO(const COutPoint& output)
 bool WalletBatch::EraseLockedUTXO(const COutPoint& output)
 {
     return EraseIC(std::make_pair(DBKeys::LOCKED_UTXO, std::make_pair(output.hash, output.n)));
-}
-
-bool WalletBatch::WriteQueuedTransaction(const Txid& txid, const CMutableTransaction& tx)
-{
-    return WriteIC(std::make_pair(DBKeys::QUEUED_TX, txid), TX_WITH_WITNESS (tx));
-}
-
-bool WalletBatch::EraseQueuedTransaction(const Txid& txid)
-{
-    return EraseIC(std::make_pair(DBKeys::QUEUED_TX, txid));
 }
 
 bool LoadKey(CWallet* pwallet, DataStream& ssKey, DataStream& ssValue, std::string& strErr)
@@ -724,25 +713,6 @@ static DBErrors LoadLegacyWalletRecords(CWallet* pwallet, DatabaseBatch& batch, 
         return DBErrors::LOAD_OK;
     });
     result = std::max(result, watch_meta_res.m_result);
-
-    // Load queued transactions
-    LoadResult queued_res = LoadRecords(pwallet, batch, DBKeys::QUEUED_TX,
-        [] (CWallet* pwallet, DataStream& key, DataStream& value, std::string& err) {
-        std::string strTxid;
-        key >> strTxid;
-
-        const auto u256Txid = uint256::FromHex(strTxid);
-        if (!u256Txid)
-            return DBErrors::CORRUPT;
-
-        CMutableTransaction pending;
-        value >> TX_WITH_WITNESS (pending);
-
-        pwallet->queuedTransactionMap[Txid::FromUint256(*u256Txid)] = pending;
-
-        return DBErrors::LOAD_OK;
-    });
-    result = std::max(result, queued_res.m_result);
 
     // Deal with old "wkey" and "defaultkey" records.
     // These are not actually loaded, but we need to check for them

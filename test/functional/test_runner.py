@@ -421,7 +421,6 @@ BASE_SCRIPTS = [
     'name_scanning.py',
     'name_segwit.py',
     'name_sendcoins.py',
-    'name_txnqueue.py',
     'name_utxo.py',
     'name_wallet.py',
 ]
