@@ -42,7 +42,8 @@ class KeypoolRestoreTest(BitcoinTestFramework):
         for i in [1, 2, 3, 4]:
             self.connect_nodes(0, i)
 
-        output_types = ["legacy", "p2sh-segwit", "bech32", "bech32m"]
+        # Namecoin: Taproot (bech32m) is not active
+        output_types = ["legacy", "p2sh-segwit", "bech32"]
         for i, output_type in enumerate(output_types):
             self.log.info("Generate keys for wallet with address type: {}".format(output_type))
             idx = i+1

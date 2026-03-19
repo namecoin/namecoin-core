@@ -108,12 +108,8 @@ class WalletSignerTest(BitcoinTestFramework):
         assert_equal(address_info['ismine'], True)
         assert_equal(address_info['hdkeypath'], "m/44h/1h/0h/0/0")
 
-        address4 = hww.getnewaddress(address_type="bech32m")
-        assert_equal(address4, "ncrt1phw4cgpt6cd30kz9k4wkpwm872cdvhss29jga2xpmftelhqll62msgz5f2z")
-        address_info = hww.getaddressinfo(address4)
-        assert_equal(address_info['solvable'], True)
-        assert_equal(address_info['ismine'], True)
-        assert_equal(address_info['hdkeypath'], "m/86h/1h/0h/0/0")
+        # Namecoin: Taproot (bech32m) is not active
+        # address4 = hww.getnewaddress(address_type="bech32m")
 
         self.log.info('Test walletdisplayaddress')
         for address in [address1, address2, address3]:
@@ -135,6 +131,9 @@ class WalletSignerTest(BitcoinTestFramework):
         )
 
         self.log.info('Prepare mock PSBT')
+        # Namecoin: Taproot (bech32m) is not active, derive tr() address via descriptor
+        tr_desc = [d["desc"] for d in hww.listdescriptors()["descriptors"] if d["desc"].startswith("tr(") and not d["internal"]][0]
+        address4 = hww.deriveaddresses(tr_desc, [0, 0])[0]
         self.nodes[0].sendtoaddress(address4, 1)
         self.generate(self.nodes[0], 1)
 
@@ -215,7 +214,8 @@ class WalletSignerTest(BitcoinTestFramework):
         assert_equal(hww.getwalletinfo()["external_signer"], True)
 
         # Fund wallet
-        self.nodes[0].sendtoaddress(hww.getnewaddress(address_type="bech32m"), 1)
+        # Namecoin: Taproot (bech32m) is not active, use bech32 instead
+        self.nodes[0].sendtoaddress(hww.getnewaddress(address_type="bech32"), 1)
         self.generate(self.nodes[0], 1)
 
         # Restart node with no signer connected

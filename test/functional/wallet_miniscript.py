@@ -228,7 +228,11 @@ class WalletMiniscriptTest(BitcoinTestFramework):
         )[0]["success"]
 
         self.log.info("Testing we derive new addresses for it")
-        addr_type = "bech32m" if desc.startswith("tr(") else "bech32"
+        # Namecoin: Taproot (bech32m) is not active
+        if desc.startswith("tr("):
+            self.log.info("Skipping taproot descriptor (bech32m not active on Namecoin)")
+            return
+        addr_type = "bech32"
         assert_equal(
             self.ms_wo_wallet.getnewaddress(address_type=addr_type),
             self.funder.deriveaddresses(desc, 0)[0],
@@ -252,6 +256,10 @@ class WalletMiniscriptTest(BitcoinTestFramework):
     ):
         self.log.info(f"Importing private Miniscript descriptor '{desc}'")
         is_taproot = desc.startswith("tr(")
+        # Namecoin: Taproot (bech32m) is not active
+        if is_taproot:
+            self.log.info("Skipping taproot descriptor (bech32m not active on Namecoin)")
+            return
         desc = descsum_create(desc)
         res = self.ms_sig_wallet.importdescriptors(
             [
@@ -372,6 +380,8 @@ class WalletMiniscriptTest(BitcoinTestFramework):
                 desc.get("sha256_preimages"),
             )
 
+        # Namecoin: Taproot (bech32m) is not active — skip TapMiniscript max-size test
+        return
         # Test we can sign for a max-size TapMiniscript. Recompute the maximum accepted size
         # for a TapMiniscript (see cpp file for details). Then pad a simple pubkey check up
         # to the maximum size. Make sure we can import and spend this script.

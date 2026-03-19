@@ -8,7 +8,7 @@ import re
 from test_framework.descriptors import descsum_create
 from test_framework.key import H_POINT
 from test_framework.script import hash160
-from test_framework.test_framework import BitcoinTestFramework
+from test_framework.test_framework import BitcoinTestFramework, SkipTest
 from test_framework.util import (
     assert_equal,
     assert_greater_than,
@@ -316,6 +316,8 @@ class WalletMuSigTest(BitcoinTestFramework):
         self.nodes[0].sendrawtransaction(finalized["hex"])
 
     def run_test(self):
+        # Namecoin: Taproot (bech32m) is not active
+        raise SkipTest("Taproot (bech32m) is not active on Namecoin")
         self.def_wallet = self.nodes[0].get_wallet_rpc(self.default_wallet_name)
 
         self.test_success_case("rawtr(musig(keys/*))", "rawtr(musig($0/<0;1>/*,$1/<1;2>/*,$2/<2;3>/*))")
