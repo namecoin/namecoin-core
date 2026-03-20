@@ -419,6 +419,7 @@ BASE_SCRIPTS = [
     'name_rawtx.py',
     'name_registration.py',
     'name_reorg.py',
+    'name_rpc_aliases.py',
     'name_scanning.py',
     'name_segwit.py',
     'name_sendcoins.py',

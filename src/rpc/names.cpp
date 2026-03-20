@@ -43,20 +43,91 @@
 namespace
 {
 
+/**
+ * Look up a key in a UniValue object, accepting both the canonical snake_case
+ * name and a legacy camelCase alias.  Returns the value if found under either
+ * key, or UniValue::VNULL if neither is present.
+ */
+const UniValue&
+GetOptionWithAlias (const UniValue& options,
+                    const std::string& snake_case,
+                    const std::string& camelCase)
+{
+  if (options.exists (snake_case))
+    return options[snake_case];
+  if (options.exists (camelCase))
+    return options[camelCase];
+  static const UniValue nullVal;
+  return nullVal;
+}
+
+/**
+ * Check whether a boolean option is set, accepting both snake_case and
+ * camelCase variants.
+ */
+bool
+GetBoolOptionWithAlias (const UniValue& options,
+                        const std::string& snake_case,
+                        const std::string& camelCase,
+                        bool defaultValue)
+{
+  const UniValue& val = GetOptionWithAlias (options, snake_case, camelCase);
+  if (val.isNull ())
+    return defaultValue;
+  return val.get_bool ();
+}
+
 NameEncoding
 EncodingFromOptionsJson (const UniValue& options, const std::string& field,
                          const NameEncoding defaultValue)
 {
+  /* Accept both snake_case and camelCase variants.  */
+  static const std::map<std::string, std::string> aliases = {
+    {"name_encoding", "nameEncoding"},
+    {"value_encoding", "valueEncoding"},
+  };
+
   NameEncoding res = defaultValue;
+
+  /* Check the canonical field name first, then alias.  */
+  std::string effectiveField = field;
+  const UniValue* valPtr = nullptr;
+
+  if (options.exists (field))
+    valPtr = &options[field];
+  else
+    {
+      auto it = aliases.find (field);
+      if (it != aliases.end () && options.exists (it->second))
+        {
+          effectiveField = it->second;
+          valPtr = &options[it->second];
+        }
+      else
+        {
+          /* Try reverse: field is camelCase, look for snake_case.  */
+          for (const auto& [snake, camel] : aliases)
+            {
+              if (camel == field && options.exists (snake))
+                {
+                  effectiveField = snake;
+                  valPtr = &options[snake];
+                  break;
+                }
+            }
+        }
+    }
+
   RPCTypeCheckObj (options,
     {
-      {field, UniValueType (UniValue::VSTR)},
+      {effectiveField, UniValueType (UniValue::VSTR)},
     },
     true, false);
-  if (options.exists (field))
+
+  if (valPtr != nullptr)
     try
       {
-        res = EncodingFromString (options[field].get_str ());
+        res = EncodingFromString (valPtr->get_str ());
       }
     catch (const std::invalid_argument& exc)
       {
@@ -204,13 +275,15 @@ GetNameForLookup (const UniValue& val, const UniValue& opt)
   RPCTypeCheckObj (opt,
     {
       {"byHash", UniValueType (UniValue::VSTR)},
+      {"by_hash", UniValueType (UniValue::VSTR)},
     },
     true, false);
 
-  if (!opt.exists ("byHash"))
+  const UniValue& byHashVal = GetOptionWithAlias (opt, "by_hash", "byHash");
+  if (byHashVal.isNull ())
     return identifier;
 
-  const std::string byHashType = opt["byHash"].get_str ();
+  const std::string byHashType = byHashVal.get_str ();
   if (byHashType == "direct")
     return identifier;
 
@@ -445,10 +518,10 @@ NameOptionsHelp&
 NameOptionsHelp::withWriteOptions ()
 {
   withArg ("destAddress", RPCArg::Type::STR,
-           "The address to send the name output to");
+           "The address to send the name output to (also accepted as dest_address)");
 
   withArg ("sendCoins", RPCArg::Type::OBJ_USER_KEYS,
-           "Addresses to which coins should be sent additionally",
+           "Addresses to which coins should be sent additionally (also accepted as send_coins)",
            {
               {"address", RPCArg::Type::AMOUNT, RPCArg::Optional::NO,
                "A key-value pair. The key (string) is the address,"
@@ -462,7 +535,7 @@ NameOptionsHelp&
 NameOptionsHelp::withNameEncoding ()
 {
   withArg ("nameEncoding", RPCArg::Type::STR,
-           "Encoding (\"ascii\", \"utf8\" or \"hex\") of the name argument");
+           "Encoding (\"ascii\", \"utf8\" or \"hex\") of the name argument (also accepted as name_encoding)");
   return *this;
 }
 
@@ -470,7 +543,7 @@ NameOptionsHelp&
 NameOptionsHelp::withValueEncoding ()
 {
   withArg ("valueEncoding", RPCArg::Type::STR,
-           "Encoding (\"ascii\", \"utf8\" or \"hex\") of the value argument");
+           "Encoding (\"ascii\", \"utf8\" or \"hex\") of the value argument (also accepted as value_encoding)");
   return *this;
 }
 
@@ -478,7 +551,7 @@ NameOptionsHelp&
 NameOptionsHelp::withByHash ()
 {
   withArg ("byHash", RPCArg::Type::STR,
-           "Interpret \"name\" as hash (\"direct\" or \"sha256d\")");
+           "Interpret \"name\" as hash (\"direct\" or \"sha256d\") (also accepted as by_hash)");
   return *this;
 }
 
@@ -535,12 +608,13 @@ name_show ()
   RPCTypeCheckObj(options,
     {
       {"allowExpired", UniValueType(UniValue::VBOOL)},
+      {"allow_expired", UniValueType(UniValue::VBOOL)},
     },
     true, false);
 
   bool allow_expired = gArgs.GetBoolArg("-allowexpired", DEFAULT_ALLOWEXPIRED);
-  if (options.exists("allowExpired"))
-    allow_expired = options["allowExpired"].get_bool();
+  allow_expired = GetBoolOptionWithAlias (options, "allow_expired",
+                                          "allowExpired", allow_expired);
 
   const valtype name = GetNameForLookup (request.params[0], options);
 
@@ -710,25 +784,33 @@ name_scan ()
     {
       {"minConf", UniValueType (UniValue::VNUM)},
       {"maxConf", UniValueType (UniValue::VNUM)},
+      {"min_conf", UniValueType (UniValue::VNUM)},
+      {"max_conf", UniValueType (UniValue::VNUM)},
       {"prefix", UniValueType (UniValue::VSTR)},
       {"regexp", UniValueType (UniValue::VSTR)},
     },
     true, false);
 
   int minConf = 1;
-  if (options.exists ("minConf"))
-    minConf = options["minConf"].getInt<int> ();
+  {
+    const UniValue& val = GetOptionWithAlias (options, "min_conf", "minConf");
+    if (!val.isNull ())
+      minConf = val.getInt<int> ();
+  }
   if (minConf < 1)
-    throw JSONRPCError (RPC_INVALID_PARAMETER, "minConf must be >= 1");
+    throw JSONRPCError (RPC_INVALID_PARAMETER, "min_conf must be >= 1");
 
   int maxConf = -1;
-  if (options.exists ("maxConf"))
-    {
-      maxConf = options["maxConf"].getInt<int> ();
-      if (maxConf < 0)
-        throw JSONRPCError (RPC_INVALID_PARAMETER,
-                            "maxConf must not be negative");
-    }
+  {
+    const UniValue& val = GetOptionWithAlias (options, "max_conf", "maxConf");
+    if (!val.isNull ())
+      {
+        maxConf = val.getInt<int> ();
+        if (maxConf < 0)
+          throw JSONRPCError (RPC_INVALID_PARAMETER,
+                              "max_conf must not be negative");
+      }
+  }
 
   valtype prefix;
   if (options.exists ("prefix"))
@@ -1128,11 +1210,16 @@ std::span<const CRPCCommand> GetNameRPCCommands()
 static const CRPCCommand commands[] =
 { //  category               actor (function)
   //  ---------------------  -----------------------
-    { "names",               &name_show,               },
-    { "names",               &name_history,            },
-    { "names",               &name_scan,               },
-    { "names",               &name_pending,            },
-    { "names",               &name_checkdb,            },
+
+    /* New Bitcoin Core-convention names (registered first so they appear
+       in help output instead of the legacy names).  The same function
+       pointer gives them the same unique_id as the legacy entry, so
+       CRPCTable::help() will only show one of each pair.  */
+    { "names",               &name_show,               },  // getname alias
+    { "names",               &name_history,            },  // getnamehistory alias
+    { "names",               &name_scan,               },  // listnames alias (kept as primary for now)
+    { "names",               &name_pending,            },  // getmempoolnames alias
+    { "names",               &name_checkdb,            },  // checknamedb alias
     { "rawtransactions",     &namerawtransaction,      },
     { "rawtransactions",     &namepsbt,                },
 };
@@ -1144,4 +1231,75 @@ void RegisterNameRPCCommands(CRPCTable &t)
 {
   for (const auto& c : GetNameRPCCommands ())
     t.appendCommand(c.name, &c);
+
+  /* Register Bitcoin Core-convention aliases.
+     These share the same unique_id (function pointer) as the primary
+     entries above, so CRPCTable::help() only shows each command once.
+     The alias entries need separate CRPCCommand objects because the
+     name field differs.  */
+
+  // getname  →  name_show
+  static const CRPCCommand alias_getname{
+      "names",
+      "getname",
+      [](const JSONRPCRequest& request, UniValue& result, bool last_handler) {
+          result = name_show().HandleRequest(request);
+          return true;
+      },
+      name_show().GetArgNames(),
+      intptr_t(&name_show)
+  };
+  t.appendCommand("getname", &alias_getname);
+
+  // getnamehistory  →  name_history
+  static const CRPCCommand alias_getnamehistory{
+      "names",
+      "getnamehistory",
+      [](const JSONRPCRequest& request, UniValue& result, bool last_handler) {
+          result = name_history().HandleRequest(request);
+          return true;
+      },
+      name_history().GetArgNames(),
+      intptr_t(&name_history)
+  };
+  t.appendCommand("getnamehistory", &alias_getnamehistory);
+
+  // listnames  →  name_scan
+  static const CRPCCommand alias_listnames{
+      "names",
+      "listnames",
+      [](const JSONRPCRequest& request, UniValue& result, bool last_handler) {
+          result = name_scan().HandleRequest(request);
+          return true;
+      },
+      name_scan().GetArgNames(),
+      intptr_t(&name_scan)
+  };
+  t.appendCommand("listnames", &alias_listnames);
+
+  // getmempoolnames  →  name_pending
+  static const CRPCCommand alias_getmempoolnames{
+      "names",
+      "getmempoolnames",
+      [](const JSONRPCRequest& request, UniValue& result, bool last_handler) {
+          result = name_pending().HandleRequest(request);
+          return true;
+      },
+      name_pending().GetArgNames(),
+      intptr_t(&name_pending)
+  };
+  t.appendCommand("getmempoolnames", &alias_getmempoolnames);
+
+  // checknamedb  →  name_checkdb
+  static const CRPCCommand alias_checknamedb{
+      "names",
+      "checknamedb",
+      [](const JSONRPCRequest& request, UniValue& result, bool last_handler) {
+          result = name_checkdb().HandleRequest(request);
+          return true;
+      },
+      name_checkdb().GetArgNames(),
+      intptr_t(&name_checkdb)
+  };
+  t.appendCommand("checknamedb", &alias_checknamedb);
 }
