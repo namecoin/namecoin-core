@@ -399,6 +399,7 @@ BASE_SCRIPTS = [
     # name tests
     'name_allowexpired.py',
     'name_ant_workflow.py',
+    'name_autoregister.py',
     'name_byhash.py',
     # FIXME: Fix for descriptor wallets:
     #'name_deterministic_salt.py',

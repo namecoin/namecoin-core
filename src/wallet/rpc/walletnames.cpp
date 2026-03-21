@@ -37,6 +37,7 @@
 #include <wallet/rpc/util.h>
 #include <wallet/rpc/wallet.h>
 #include <wallet/scriptpubkeyman.h>
+#include <wallet/spend.h>
 #include <wallet/wallet.h>
 
 #include <univalue.h>
@@ -176,6 +177,19 @@ SendNameOutput (const JSONRPCRequest& request,
 
   CCoinControl coinControl;
   return SendMoney (wallet, coinControl, nameInput, vecSend, {}, false);
+}
+
+/**
+ * Checks whether a name exists (is registered and not expired).
+ * Acquires cs_main internally.
+ */
+bool
+existsName (const ChainstateManager& chainman, const valtype& name)
+{
+  LOCK (cs_main);
+  CNameData data;
+  const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
+  return coinsTip.GetName (name, data) && !data.isExpired (chainman.ActiveHeight ());
 }
 
 } // anonymous namespace
@@ -418,11 +432,7 @@ name_new ()
 
   if (!options["allowExisting"].isTrue ())
     {
-      LOCK (cs_main);
-      CNameData oldData;
-      const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
-      if (coinsTip.GetName (name, oldData)
-            && !oldData.isExpired (chainman.ActiveHeight ()))
+      if (existsName (chainman, name))
         throw JSONRPCError (RPC_TRANSACTION_ERROR, "this name exists already");
     }
 
@@ -591,11 +601,7 @@ name_firstupdate ()
 
   if (request.params.size () < 6 || !request.params[5].get_bool ())
     {
-      LOCK (cs_main);
-      CNameData oldData;
-      const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
-      if (coinsTip.GetName (name, oldData)
-            && !oldData.isExpired (chainman.ActiveHeight ()))
+      if (existsName (chainman, name))
         throw JSONRPCError (RPC_TRANSACTION_ERROR,
                             "this name is already active");
     }
@@ -801,14 +807,15 @@ name_update ()
 
   if (outp.IsNull ())
     {
-      LOCK (cs_main);
-
-      CNameData oldData;
-      const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
-      if (!coinsTip.GetName (name, oldData)
-            || oldData.isExpired (chainman.ActiveHeight ()))
+      if (!existsName (chainman, name))
         throw JSONRPCError (RPC_TRANSACTION_ERROR,
                             "this name can not be updated");
+
+      LOCK (cs_main);
+      CNameData oldData;
+      const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
+      const bool found = coinsTip.GetName (name, oldData);
+      assert (found);
       if (isDefaultVal)
         value = oldData.getValue();
       outp = oldData.getUpdateOutpoint ();
@@ -836,6 +843,259 @@ name_update ()
   destHelper.finalise ();
 
   return txidVal;
+}
+  );
+}
+
+/* ************************************************************************** */
+
+namespace
+{
+
+/**
+ * Helper class for name_autoregister.  Encapsulates the state and logic
+ * for creating the name_new transaction, building the name_firstupdate
+ * transaction, committing it to the wallet for automatic rebroadcast,
+ * and locking the name_new output.
+ */
+class AutoregisterHelper
+{
+
+private:
+
+  const JSONRPCRequest& request;
+  CWallet& wallet;
+  ChainstateManager& chainman;
+  NodeContext& node;
+
+  valtype name;
+  valtype value;
+
+  /** The txid of the name_new transaction.  */
+  Txid newTxid;
+
+  /** The random salt used in the name_new.  */
+  valtype rand;
+
+  /** The destination address helper.  */
+  DestinationAddressHelper destHelper;
+
+public:
+
+  AutoregisterHelper (const JSONRPCRequest& req, CWallet& w,
+                      ChainstateManager& cm, NodeContext& n,
+                      const valtype& nm, const valtype& val,
+                      const UniValue& options)
+    : request(req), wallet(w), chainman(cm), node(n),
+      name(nm), value(val), destHelper(w)
+  {
+    destHelper.setOptions (options);
+  }
+
+  /** Create and broadcast the name_new transaction.  */
+  void createNameNew (const UniValue& options);
+
+  /** Build, sign, and commit the name_firstupdate transaction.  */
+  void createAndCommitFirstUpdate ();
+
+  /** Lock the name script output of the name_new transaction.  */
+  void lockNameNewOutput ();
+
+  /** Finalise the destination address reservation.  */
+  void finalise () { destHelper.finalise (); }
+
+  Txid getNewTxid () const { return newTxid; }
+  const valtype& getRand () const { return rand; }
+
+};
+
+void
+AutoregisterHelper::createNameNew (const UniValue& options)
+{
+  const CTxDestination dest = destHelper.getDest ();
+  const CScript destScript = GetScriptForDestination (dest);
+
+  rand.resize (20);
+  if (!getNameSalt (&wallet, name, destScript, rand))
+    GetRandBytes (rand);
+
+  const CScript nameOp
+    = CNameScript::buildNameNew (CScript (), name, rand);
+
+  const UniValue txidVal
+    = SendNameOutput (request, wallet, dest, nameOp, nullptr, options);
+
+  newTxid = Txid::FromUint256 (ParseHashV (txidVal, "txid"));
+}
+
+void
+AutoregisterHelper::createAndCommitFirstUpdate ()
+{
+  const CTxDestination dest = destHelper.getDest ();
+
+  /* Build the name_firstupdate script.  */
+  const CScript nameOp
+    = CNameScript::buildNameFirstupdate (CScript (), name, value, rand);
+
+  /* Find the name_new output to spend from the wallet transaction.
+     The name_new was just broadcast and is not yet in CoinsTip,
+     so we look it up directly from the wallet.  */
+  CTxIn txIn;
+  {
+    const CWalletTx* wtx = wallet.GetWalletTx (newTxid);
+    if (!wtx)
+      throw JSONRPCError (RPC_TRANSACTION_ERROR,
+                          "could not find name_new in wallet");
+
+    bool found = false;
+    for (unsigned int i = 0; i < wtx->tx->vout.size (); ++i)
+      {
+        if (CNameScript::isNameScript (wtx->tx->vout[i].scriptPubKey))
+          {
+            txIn = CTxIn (COutPoint (newTxid, i));
+            found = true;
+            break;
+          }
+      }
+    if (!found)
+      throw JSONRPCError (RPC_TRANSACTION_ERROR,
+                          "could not find name_new output");
+  }
+
+  /* Create the firstupdate transaction via the standard wallet path.
+     The mempool will reject this while the name_new is immature
+     (< MIN_FIRSTUPDATE_DEPTH confirmations).  CommitTransaction
+     stores the tx in the wallet regardless, and blockConnected
+     retries on each new block via m_pending_rebroadcast until the
+     name_new matures and the firstupdate is accepted.  */
+  std::vector<CRecipient> vecSend;
+  vecSend.push_back ({dest, NAME_LOCKED_AMOUNT, false, nameOp});
+
+  CCoinControl coinControl;
+  auto res = CreateTransaction (wallet, vecSend, &txIn,
+                                /*change_pos=*/std::nullopt, coinControl,
+                                /*sign=*/true);
+  if (!res)
+    throw JSONRPCError (RPC_WALLET_ERROR,
+                        "failed to create name_firstupdate: "
+                        + util::ErrorString (res).original);
+
+  /* Commit the transaction to the wallet and broadcast it.
+     CommitTransaction adds the tx to the wallet regardless of whether
+     the mempool accepts it.  Since the name_new is immature at this
+     point, the mempool will reject it; CommitTransaction sets
+     m_pending_rebroadcast so that blockConnected retries on each new
+     block until the name_new matures.  */
+  wallet.CommitTransaction (res->tx, {}, {});
+}
+
+void
+AutoregisterHelper::lockNameNewOutput ()
+{
+  const CWalletTx* wtx = wallet.GetWalletTx (newTxid);
+  if (!wtx)
+    return;
+
+  for (unsigned int i = 0; i < wtx->tx->vout.size (); ++i)
+    {
+      if (CNameScript::isNameScript (wtx->tx->vout[i].scriptPubKey))
+        {
+          wallet.LockCoin (COutPoint (newTxid, i));
+          break;
+        }
+    }
+}
+
+} // anonymous namespace
+
+RPCHelpMan
+name_autoregister ()
+{
+  NameOptionsHelp optHelp;
+  optHelp
+      .withNameEncoding ()
+      .withValueEncoding ()
+      .withWriteOptions ();
+
+  return RPCHelpMan ("name_autoregister",
+      "\nRegisters a name atomically.  Performs name_new and name_firstupdate"
+      "\nin a single call.  The firstupdate transaction is committed to the"
+      "\nwallet and broadcast; the wallet's automatic rebroadcast mechanism"
+      "\nhandles retries if the mempool does not accept it immediately."
+          + HELP_REQUIRING_PASSPHRASE,
+      {
+          {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name to register"},
+          {"value", RPCArg::Type::STR, RPCArg::Optional::OMITTED_NAMED_ARG, "Value for the name"},
+          optHelp.buildRpcArg (),
+      },
+      RPCResult {RPCResult::Type::OBJ, "", "",
+          {
+              {RPCResult::Type::STR_HEX, "txid", "the txid of the name_new transaction"},
+              {RPCResult::Type::STR_HEX, "rand", "the random value used"},
+          },
+      },
+      RPCExamples {
+          HelpExampleCli ("name_autoregister", "\"myname\"")
+        + HelpExampleCli ("name_autoregister", "\"myname\" \"my-value\"")
+        + HelpExampleRpc ("name_autoregister", "\"myname\", \"my-value\"")
+      },
+      [&] (const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+  std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest (request);
+  if (!wallet)
+    return NullUniValue;
+  CWallet* const pwallet = wallet.get ();
+
+  RPCTypeCheck (request.params, {UniValue::VSTR, UniValue::VSTR, UniValue::VOBJ},
+                true);
+  auto& node = EnsureAnyNodeContext (request);
+  auto& chainman = EnsureChainman (node);
+
+  UniValue options(UniValue::VOBJ);
+  if (request.params.size () >= 3)
+    options = request.params[2].get_obj ();
+
+  const valtype name = DecodeNameFromRPCOrThrow (request.params[0], options);
+  if (name.size () > MAX_NAME_LENGTH)
+    throw JSONRPCError (RPC_INVALID_PARAMETER, "the name is too long");
+
+  if (existsName (chainman, name))
+    throw JSONRPCError (RPC_TRANSACTION_ERROR, "this name exists already");
+
+  const bool isDefaultVal = (request.params.size () < 2 || request.params[1].isNull ());
+  const valtype value = isDefaultVal
+    ? valtype ()
+    : DecodeValueFromRPCOrThrow (request.params[1], options);
+
+  if (value.size () > MAX_VALUE_LENGTH_UI)
+    throw JSONRPCError (RPC_INVALID_PARAMETER, "the value is too long");
+
+  /* Make sure the results are valid at least up to the most recent block
+     the user could have gotten from another RPC command prior to now.  */
+  pwallet->BlockUntilSyncedToCurrentChain ();
+
+  LOCK (pwallet->cs_wallet);
+  EnsureWalletIsUnlocked (*pwallet);
+
+  AutoregisterHelper helper(request, *pwallet, chainman, node,
+                            name, value, options);
+
+  helper.createNameNew (options);
+  helper.createAndCommitFirstUpdate ();
+  helper.lockNameNewOutput ();
+  helper.finalise ();
+
+  const std::string randStr = HexStr (helper.getRand ());
+  const std::string txid = helper.getNewTxid ().GetHex ();
+
+  LogPrintf ("name_autoregister: name=%s, rand=%s, tx=%s\n",
+             EncodeNameForMessage (name), randStr.c_str (), txid.c_str ());
+
+  UniValue res(UniValue::VOBJ);
+  res.pushKV ("txid", txid);
+  res.pushKV ("rand", randStr);
+
+  return res;
 }
   );
 }

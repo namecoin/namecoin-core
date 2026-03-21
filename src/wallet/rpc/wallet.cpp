@@ -909,6 +909,7 @@ RPCHelpMan name_list();
 RPCHelpMan name_new();
 RPCHelpMan name_firstupdate();
 RPCHelpMan name_update();
+RPCHelpMan name_autoregister();
 
 RPCHelpMan sendtoname();
 
@@ -982,6 +983,7 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"names", &name_new},
         {"names", &name_firstupdate},
         {"names", &name_update},
+        {"names", &name_autoregister},
 
         {"names", &sendtoname},
     };
