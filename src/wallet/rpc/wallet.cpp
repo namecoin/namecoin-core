@@ -1124,6 +1124,7 @@ RPCMethod name_list();
 RPCMethod name_new();
 RPCMethod name_firstupdate();
 RPCMethod name_update();
+RPCMethod name_autoregister();
 
 RPCMethod sendtoname();
 
@@ -1201,6 +1202,7 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"names", &name_new},
         {"names", &name_firstupdate},
         {"names", &name_update},
+        {"names", &name_autoregister},
 
         {"names", &sendtoname},
     };
