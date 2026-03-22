@@ -250,6 +250,16 @@ public:
     mutable bool fChangeCached;
     mutable CAmount nChangeCached;
 
+    /**
+     * Memory-only flag: set when CommitTransaction fails to broadcast a
+     * Namecoin name transaction to the mempool (e.g. an immature
+     * name_firstupdate).  blockConnected will retry these on each new
+     * block so the transaction enters the mempool promptly once it
+     * becomes valid, rather than waiting for the 12-36 h periodic
+     * rebroadcast timer.
+     */
+    bool m_pending_rebroadcast{false};
+
     CWalletTx(CTransactionRef tx, const TxState& state) : tx(std::move(tx)), m_state(state)
     {
         Init();

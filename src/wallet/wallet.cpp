@@ -1549,6 +1549,21 @@ void CWallet::blockConnected(const ChainstateRole& role, const interfaces::Block
         transactionRemovedFromMempool(block.data->vtx[index], MemPoolRemovalReason::BLOCK);
     }
 
+    // Retry Namecoin name transactions that were committed to the wallet but
+    // rejected from the mempool (e.g. immature name_firstupdate).  A new block
+    // may have matured the name_new, making the firstupdate valid now.
+    for (auto& [txid, wtx] : mapWallet) {
+        if (!wtx.m_pending_rebroadcast) continue;
+        std::string err_string;
+        if (SubmitTxMemoryPoolAndRelay(wtx, err_string, node::TxBroadcast::MEMPOOL_AND_BROADCAST_TO_ALL)) {
+            WalletLogPrintf("blockConnected: rebroadcast of %s succeeded\n", txid.ToString());
+            wtx.m_pending_rebroadcast = false;
+        } else if (wtx.isAbandoned () || wtx.isBlockConflicted () || wtx.isConfirmed ()) {
+            // Transaction is no longer relevant; stop retrying.
+            wtx.m_pending_rebroadcast = false;
+        }
+    }
+
     // Update on disk if this block resulted in us updating a tx, or periodically every 144 blocks (~1 day)
     if (wallet_updated || block.height % 144 == 0) {
         WriteBestBlock();
@@ -2387,6 +2402,13 @@ void CWallet::CommitTransaction(CTransactionRef tx, mapValue_t mapValue, std::ve
     if (!SubmitTxMemoryPoolAndRelay(*wtx, err_string, node::TxBroadcast::MEMPOOL_AND_BROADCAST_TO_ALL)) {
         WalletLogPrintf("CommitTransaction(): Transaction cannot be broadcast immediately, %s\n", err_string);
         // TODO: if we expect the failure to be long term or permanent, instead delete wtx from the wallet and return failure.
+
+        // Mark Namecoin name transactions for per-block rebroadcast so they
+        // enter the mempool promptly once valid (e.g. after name_new matures),
+        // rather than waiting for the 12-36 h periodic rebroadcast timer.
+        if (tx->IsNamecoin ()) {
+            wtx->m_pending_rebroadcast = true;
+        }
     }
 }
 
