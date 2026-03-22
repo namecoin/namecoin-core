@@ -688,10 +688,10 @@ BOOST_AUTO_TEST_CASE (name_tx_verification)
   BOOST_CHECK (CheckNameTransaction (mtx, 100012, viewClean, state, 0));
   BOOST_CHECK (IsStandardTx (CTransaction (mtx), reason));
 
-  /* Maturity of prev out, acceptable for mempool.  */
+  /* Maturity of prev out, enforced even for mempool.  */
   BOOST_CHECK (!CheckNameTransaction (mtx, 100011, viewClean, state, 0));
-  BOOST_CHECK (CheckNameTransaction (mtx, 100011, viewClean, state,
-                                     SCRIPT_VERIFY_NAMES_MEMPOOL));
+  BOOST_CHECK (!CheckNameTransaction (mtx, 100011, viewClean, state,
+                                      SCRIPT_VERIFY_NAMES_MEMPOOL));
 
   /* Expiry and re-registration of a name.  */
   BOOST_CHECK (!CheckNameTransaction (mtx, 135999, view, state, 0));
