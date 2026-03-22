@@ -440,6 +440,7 @@ BASE_SCRIPTS = [
     'name_package.py',
     'name_pending.py',
     'name_psbt.py',
+    'name_firstupdate_maturity.py',
     'name_rawtx.py',
     'name_registration.py',
     'name_reorg.py',
