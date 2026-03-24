@@ -418,6 +418,7 @@ BASE_SCRIPTS = [
     'name_psbt.py',
     'name_rawtx.py',
     'name_registration.py',
+    'name_registername.py',
     'name_reorg.py',
     'name_scanning.py',
     'name_segwit.py',
