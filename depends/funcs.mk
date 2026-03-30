@@ -237,6 +237,12 @@ $(1)_cmake += -DCMAKE_CXX_COMPILER_TARGET=$(host)
 ifneq ($(findstring darwin,$(host)),)
 $(1)_cmake += -DCMAKE_INSTALL_NAME_TOOL=`which llvm-install-name-tool`
 endif
+ifneq ($(findstring android,$(host)),)
+$(1)_cmake += -DCMAKE_TOOLCHAIN_FILE=$($(host_os)_cmake_toolchain_file)
+$(1)_cmake += -DANDROID_NDK=$($(host_os)_cmake_toolchain_file)
+$(1)_cmake += -DANDROID_PLATFORM=$($(host_os)_cmake_system_version)
+$(1)_cmake += -DANDROID_ABI=$($(host_os)_android_abi)
+endif
 endif
 endif
 endef

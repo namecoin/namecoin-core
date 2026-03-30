@@ -92,12 +92,16 @@ endif
 host_arch=$(firstword $(subst -, ,$(canonical_host)))
 host_vendor=$(word 2,$(subst -, ,$(canonical_host)))
 full_host_os:=$(subst $(host_arch)-$(host_vendor)-,,$(canonical_host))
+# Android must be checked before Linux since Android OS strings contain "linux"
+host_os:=$(findstring android,$(full_host_os))
+ifeq ($(host_os),)
 host_os:=$(findstring linux,$(full_host_os))
 host_os+=$(findstring darwin,$(full_host_os))
 host_os+=$(findstring freebsd,$(full_host_os))
 host_os+=$(findstring netbsd,$(full_host_os))
 host_os+=$(findstring openbsd,$(full_host_os))
 host_os+=$(findstring mingw32,$(full_host_os))
+endif
 
 host_os:=$(strip $(host_os))
 ifeq ($(host_os),)
