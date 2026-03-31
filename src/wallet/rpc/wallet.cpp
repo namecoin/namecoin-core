@@ -988,6 +988,26 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"names", &dequeuetransaction},
         {"names", &listqueuedtransactions},
         {"names", &sendtoname},
+
+        // Bitcoin Core-convention aliases for wallet name RPCs.
+        // Same unique_id (function pointer) as the legacy entry above,
+        // so CRPCTable::help() only shows each command once.
+        {"names", "listwalletnames", [](const JSONRPCRequest& request, UniValue& result, bool last_handler) {
+            result = name_list().HandleRequest(request);
+            return true;
+        }, name_list().GetArgNames(), intptr_t(&name_list)},
+        {"names", "preregistername", [](const JSONRPCRequest& request, UniValue& result, bool last_handler) {
+            result = name_new().HandleRequest(request);
+            return true;
+        }, name_new().GetArgNames(), intptr_t(&name_new)},
+        {"names", "registername", [](const JSONRPCRequest& request, UniValue& result, bool last_handler) {
+            result = name_firstupdate().HandleRequest(request);
+            return true;
+        }, name_firstupdate().GetArgNames(), intptr_t(&name_firstupdate)},
+        {"names", "updatename", [](const JSONRPCRequest& request, UniValue& result, bool last_handler) {
+            result = name_update().HandleRequest(request);
+            return true;
+        }, name_update().GetArgNames(), intptr_t(&name_update)},
     };
     return commands;
 }

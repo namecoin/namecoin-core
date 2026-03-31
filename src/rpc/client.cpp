@@ -350,6 +350,18 @@ static const CRPCConvertParam vRPCConvertParams[] =
     { "namerawtransaction", 1, "vout" },
     { "namerawtransaction", 2, "nameop" },
     { "namepsbt", 1, "vout" },
+
+    // Bitcoin Core-convention aliases for name RPCs
+    { "getname", 1, "options" },
+    { "getnamehistory", 1, "options" },
+    { "listnames", 1, "count" },
+    { "listnames", 2, "options" },
+    { "getmempoolnames", 1, "options" },
+    { "listwalletnames", 1, "options" },
+    { "preregistername", 1, "options" },
+    { "registername", 4, "options" },
+    { "registername", 5, "allow_active" },
+    { "updatename", 2, "options" },
     { "namepsbt", 2, "nameop" },
     { "sendtoname", 1, "amount" },
     { "sendtoname", 4, "subtractfeefromamount" },
