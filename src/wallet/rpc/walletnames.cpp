@@ -37,6 +37,7 @@
 #include <wallet/rpc/util.h>
 #include <wallet/rpc/wallet.h>
 #include <wallet/scriptpubkeyman.h>
+#include <wallet/spend.h>
 #include <wallet/wallet.h>
 
 #include <univalue.h>
@@ -363,6 +364,66 @@ saltMatchesHash(const valtype& name, const valtype& rand, const valtype& expecte
     return (Hash160(toHash) == uint160(expectedHash));
 }
 
+/**
+ * Scan the wallet for a name_new commitment matching the given name.
+ * This is the core logic shared between name_firstupdate and registername.
+ * @param pwallet The wallet to scan
+ * @param name The name to find a commitment for
+ * @param[out] rand The salt value (set only if found)
+ * @param[out] prevTxid The txid of the matching name_new transaction
+ * @return True if a matching name_new output was found
+ */
+bool
+findNameNewCommitment(CWallet* const pwallet, const valtype& name,
+                      valtype& rand, Txid& prevTxid)
+{
+    AssertLockHeld(pwallet->cs_wallet);
+
+    for (const auto& item : pwallet->mapWallet)
+    {
+        const CWalletTx& tx = item.second;
+        if (!tx.tx->IsNamecoin())
+            continue;
+
+        CScript output;
+        CNameScript nameOp;
+        bool found = false;
+        for (const CTxOut& curOutput : tx.tx->vout)
+        {
+            const CNameScript cur(curOutput.scriptPubKey);
+            if (!cur.isNameOp())
+                continue;
+            if (cur.getNameOp() != OP_NAME_NEW)
+                continue;
+            if (found)
+            {
+                LogDebug(BCLog::NAMES, "%s: wallet contains tx with multiple name outputs", __func__);
+                continue;
+            }
+            nameOp = cur;
+            found = true;
+            output = curOutput.scriptPubKey;
+        }
+
+        if (!found)
+            continue;
+
+        // Try to derive the salt for this name using the wallet's key
+        if (!getNameSalt(pwallet, name, output, rand))
+            continue;
+
+        // Verify the salt matches the hash
+        if (!saltMatchesHash(name, rand, nameOp.getOpHash()))
+            continue;
+
+        // Found a valid commitment
+        prevTxid = tx.GetHash();
+        return true;
+    }
+
+    return false;
+}
+
 } // anonymous namespace
 
 /* ************************************************************************** */
@@ -618,48 +679,47 @@ name_firstupdate ()
 
       LOCK2 (pwallet->cs_wallet, cs_main);
 
-      for (const auto& item : pwallet->mapWallet)
+      if (!fixedRand)
         {
-          const CWalletTx& tx = item.second;
-          if (!tx.tx->IsNamecoin ())
-            continue;
-
-          CScript output;
-          CNameScript nameOp;
-          bool found = false;
-          for (CTxOut curOutput : tx.tx->vout)
+          /* Use the shared helper to scan for a matching name_new commitment.  */
+          findNameNewCommitment (pwallet, name, rand, prevTxid);
+        }
+      else
+        {
+          /* fixedRand but not fixedTxid: scan for a name_new that matches the
+             caller-supplied rand.  */
+          for (const auto& item : pwallet->mapWallet)
             {
-              CScript curScript = curOutput.scriptPubKey;
-              const CNameScript cur(curScript);
-              if (!cur.isNameOp ())
+              const CWalletTx& tx = item.second;
+              if (!tx.tx->IsNamecoin ())
                 continue;
-              if (cur.getNameOp () != OP_NAME_NEW)
+
+              CNameScript nameOp;
+              bool found = false;
+              for (const CTxOut& curOutput : tx.tx->vout)
+                {
+                  const CNameScript cur(curOutput.scriptPubKey);
+                  if (!cur.isNameOp ())
+                    continue;
+                  if (cur.getNameOp () != OP_NAME_NEW)
+                    continue;
+                  if (found) {
+                    LogDebug (BCLog::NAMES, "%s: wallet contains tx with multiple name outputs", __func__);
+                    continue;
+                  }
+                  nameOp = cur;
+                  found = true;
+                }
+
+              if (!found)
                 continue;
-              if (found) {
-                LogDebug (BCLog::NAMES, "%s: wallet contains tx with multiple name outputs", __func__);
+
+              if (!saltMatchesHash (name, rand, nameOp.getOpHash ()))
                 continue;
-              }
-              nameOp = cur;
-              found = true;
-              output = curScript;
+
+              prevTxid = tx.GetHash ();
+              break;
             }
-
-          if (!found)
-            continue; // no name outputs found
-
-          if (!fixedRand)
-            {
-              if (!getNameSalt (pwallet, name, output, rand)) // we don't have the private key for that output
-                continue;
-            }
-
-          if (!saltMatchesHash (name, rand, nameOp.getOpHash ()))
-            continue;
-
-          // found it
-          prevTxid = tx.GetHash ();
-
-          break; // if there be more than one match, the behavior is undefined
         }
     }
 
@@ -990,6 +1050,174 @@ listqueuedtransactions ()
   return result;
 }
   };
+}
+
+/* ************************************************************************** */
+/* registername: Auto-register a name with automatic name_new                 */
+/* ************************************************************************** */
+
+RPCHelpMan
+registername ()
+{
+  NameOptionsHelp optHelp;
+  optHelp
+      .withNameEncoding ()
+      .withValueEncoding ()
+      .withWriteOptions ();
+
+  return RPCHelpMan ("registername",
+      "\nRegisters a name atomically.  Performs name_new and name_firstupdate"
+      "\nwith the firstupdate broadcast handled by the wallet's automatic"
+      "\nrebroadcast mechanism if the name_new has not yet matured."
+          + HELP_REQUIRING_PASSPHRASE,
+      {
+          {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name to register"},
+          {"value", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Value for the name"},
+          optHelp.buildRpcArg (),
+      },
+      RPCResult {RPCResult::Type::OBJ, "", "",
+          {
+              {RPCResult::Type::STR_HEX, "txid", "the txid of the name_new transaction"},
+              {RPCResult::Type::STR_HEX, "rand", "the random value used"},
+          },},
+      RPCExamples {
+          HelpExampleCli ("registername", "\"myname\"")
+        + HelpExampleCli ("registername", "\"myname\" \"my-value\"")
+        + HelpExampleRpc ("registername", "\"myname\", \"my-value\"")
+      },
+      [&] (const RPCHelpMan& self, const JSONRPCRequest& request) -> UniValue
+{
+  std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest (request);
+  if (!wallet)
+    return NullUniValue;
+  CWallet* const pwallet = wallet.get ();
+
+  const auto& node = EnsureAnyNodeContext (request);
+  const auto& chainman = EnsureChainman (node);
+
+  UniValue options(UniValue::VOBJ);
+  if (request.params.size () >= 3)
+    options = request.params[2].get_obj ();
+
+  const valtype name = DecodeNameFromRPCOrThrow (request.params[0], options);
+  if (name.size () > MAX_NAME_LENGTH)
+    throw JSONRPCError (RPC_INVALID_PARAMETER, "the name is too long");
+
+  /* Check if name already exists */
+  {
+    LOCK (cs_main);
+    CNameData oldData;
+    const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
+    if (coinsTip.GetName (name, oldData)
+          && !oldData.isExpired (chainman.ActiveHeight ()))
+      throw JSONRPCError (RPC_TRANSACTION_ERROR, "this name exists already");
+  }
+
+  const bool isDefaultVal = (request.params.size () < 2 || request.params[1].isNull ());
+  const valtype value = isDefaultVal ?
+      valtype ():
+      DecodeValueFromRPCOrThrow (request.params[1], options);
+
+  if (value.size () > MAX_VALUE_LENGTH_UI)
+    throw JSONRPCError (RPC_INVALID_PARAMETER, "the value is too long");
+
+  /* Make sure the results are valid at least up to the most recent block
+     the user could have gotten from another RPC command prior to now.  */
+  pwallet->BlockUntilSyncedToCurrentChain ();
+
+  LOCK (pwallet->cs_wallet);
+
+  EnsureWalletIsUnlocked (*pwallet);
+
+  DestinationAddressHelper destHelper(*pwallet);
+  destHelper.setOptions (options);
+
+  const CTxDestination dest = destHelper.getDest ();
+
+  valtype rand(20);
+
+  /* Check if we have a matching name_new commitment in the wallet */
+  Txid existingNewTxid;
+  bool haveCommitment = findNameNewCommitment (pwallet, name, rand, existingNewTxid);
+
+  /* If not found, create one */
+  if (!haveCommitment)
+  {
+    if (!getNameSalt (pwallet, name, GetScriptForDestination (dest), rand))
+        GetRandBytes (rand);
+
+    const CScript nameOp = CNameScript::buildNameNew (CScript (), name, rand);
+
+    const UniValue txidVal
+        = SendNameOutput (request, *pwallet, dest, nameOp, nullptr, options);
+    destHelper.finalise ();
+
+    const std::string randStr = HexStr (rand);
+    const std::string txid = txidVal.get_str ();
+    LogInfo ("registername: created name_new, name=%s, rand=%s, tx=%s\n",
+             EncodeNameForMessage (name), randStr.c_str (), txid.c_str ());
+
+    /* Build and commit the name_firstupdate transaction.
+       The name_new output is not yet in CoinsTip (it's just in the mempool
+       or wallet), so we look it up from the wallet transaction directly.  */
+    const auto newTxid = Txid::FromHex (txid);
+    const auto* wtx = pwallet->GetWalletTx (*newTxid);
+    if (!wtx)
+      throw JSONRPCError (RPC_TRANSACTION_ERROR, "name_new not found in wallet");
+
+    CTxOut prevOut;
+    CTxIn txIn;
+    for (unsigned i = 0; i < wtx->tx->vout.size (); ++i)
+    {
+      if (CNameScript::isNameScript (wtx->tx->vout[i].scriptPubKey))
+      {
+        prevOut = wtx->tx->vout[i];
+        txIn = CTxIn (COutPoint (*newTxid, i));
+        break;
+      }
+    }
+
+    if (prevOut.IsNull ())
+      throw JSONRPCError (RPC_TRANSACTION_ERROR, "could not find name_new output");
+
+    const CScript nfuScript = CNameScript::buildNameFirstupdate (CScript (), name, value, rand);
+
+    /* Use SendNameOutput which handles destination, coin control,
+       and the full send flow including CommitTransaction.  */
+    SendNameOutput (request, *pwallet, dest, nfuScript, &txIn, options);
+
+    UniValue res(UniValue::VOBJ);
+    res.pushKV ("txid", txid);
+    res.pushKV ("rand", randStr);
+
+    return res;
+  }
+
+  /* We have a commitment, just build the name_firstupdate using it */
+
+  CTxOut prevOut;
+  CTxIn txIn;
+  {
+    LOCK (cs_main);
+    if (!getNamePrevout (chainman.ActiveChainstate (), existingNewTxid, prevOut, txIn))
+      throw JSONRPCError (RPC_TRANSACTION_ERROR, "previous txid not found");
+  }
+
+  const CScript nameOp
+    = CNameScript::buildNameFirstupdate (CScript (), name, value, rand);
+
+  const UniValue txidVal
+      = SendNameOutput (request, *pwallet, destHelper.getDest (), nameOp,
+                        &txIn, options);
+  destHelper.finalise ();
+
+  UniValue res(UniValue::VOBJ);
+  res.pushKV ("txid", txidVal.get_str());
+  res.pushKV ("rand", HexStr(rand));
+
+  return res;
+}
+  );
 }
 
 /* ************************************************************************** */
