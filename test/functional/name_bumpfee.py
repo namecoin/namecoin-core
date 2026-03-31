@@ -34,6 +34,19 @@ class NameBumpFeeTest(NameTestFramework):
         self.test_bumpfee_name_firstupdate(node)
         self.test_bumpfee_name_update(node)
 
+    def get_decoded_tx(self, node, txid):
+        """Get a decoded transaction via the wallet RPC.
+
+        Uses gettransaction (wallet RPC) + decoderawtransaction instead of
+        getrawtransaction (mempool/blockchain RPC). This is necessary because
+        getrawtransaction requires either mempool presence or -txindex, and
+        after bumpfee the original transaction is evicted from the mempool
+        by the RBF replacement. The wallet always tracks its own transactions
+        regardless of mempool state.
+        """
+        tx_hex = node.gettransaction(txid)["hex"]
+        return node.decoderawtransaction(tx_hex)
+
     def bump_and_check_name_op(self, node, txid, expected_name_op):
         """Shared helper: verify original tx nameOp, bump fee, verify bumped tx nameOp.
 
@@ -46,7 +59,7 @@ class NameBumpFeeTest(NameTestFramework):
         """
 
         # Verify original transaction has the expected nameOp
-        orig_tx = node.getrawtransaction(txid, True)
+        orig_tx = self.get_decoded_tx(node, txid)
         orig_name_vout = self.find_name_vout(orig_tx)
         assert orig_name_vout is not None, \
             "Original tx should have a nameOp output"
@@ -59,7 +72,7 @@ class NameBumpFeeTest(NameTestFramework):
         assert_greater_than(result["fee"], 0)
 
         # Verify the replacement transaction preserves the nameOp
-        bumped_tx = node.getrawtransaction(bumped_txid, True)
+        bumped_tx = self.get_decoded_tx(node, bumped_txid)
         bumped_name_vout = self.find_name_vout(bumped_tx)
         assert bumped_name_vout is not None, \
             "Bumped tx must preserve the name operation"
@@ -75,7 +88,7 @@ class NameBumpFeeTest(NameTestFramework):
         txid = new_data[0]
 
         # Get the hash from the original tx to build expected nameOp
-        orig_tx = node.getrawtransaction(txid, True)
+        orig_tx = self.get_decoded_tx(node, txid)
         orig_name_vout = self.find_name_vout(orig_tx)
         name_hash = orig_name_vout["scriptPubKey"]["nameOp"]["hash"]
 
@@ -96,14 +109,16 @@ class NameBumpFeeTest(NameTestFramework):
             0, "test/bumpfee-firstupdate", new_data, "initial-value")
 
         # Get the rand from the original tx to build expected nameOp
-        orig_tx = node.getrawtransaction(txid, True)
+        orig_tx = self.get_decoded_tx(node, txid)
         orig_name_vout = self.find_name_vout(orig_tx)
         rand = orig_name_vout["scriptPubKey"]["nameOp"]["rand"]
 
         expected_name_op = {
             "op": "name_firstupdate",
             "name": "test/bumpfee-firstupdate",
+            "name_encoding": "ascii",
             "value": "initial-value",
+            "value_encoding": "ascii",
             "rand": rand,
         }
 
@@ -131,7 +146,9 @@ class NameBumpFeeTest(NameTestFramework):
         expected_name_op = {
             "op": "name_update",
             "name": "test/bumpfee-update",
+            "name_encoding": "ascii",
             "value": "updated-value",
+            "value_encoding": "ascii",
         }
 
         self.bump_and_check_name_op(node, txid, expected_name_op)

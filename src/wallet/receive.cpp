@@ -86,6 +86,11 @@ bool ScriptIsChange(const CWallet& wallet, const CScript& script)
     AssertLockHeld(wallet.cs_wallet);
     if (wallet.IsMine(script))
     {
+        // Name operation outputs should NOT be considered change.
+        // They are intentional outputs with special semantics.
+        if (CNameScript::isNameScript(script))
+            return false;
+
         CTxDestination address;
         if (!ExtractDestination(script, address))
             return true;
