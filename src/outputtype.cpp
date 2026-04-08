@@ -29,7 +29,8 @@ std::optional<OutputType> ParseOutputType(std::string_view type)
     } else if (type == OUTPUT_TYPE_STRING_BECH32) {
         return OutputType::BECH32;
     } else if (type == OUTPUT_TYPE_STRING_BECH32M) {
-        return OutputType::BECH32M;
+        // Namecoin: reject bech32m (Taproot) until Taproot is active
+        return std::nullopt;
     }
     return std::nullopt;
 }

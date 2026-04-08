@@ -31,8 +31,8 @@ import random
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.blocktools import COINBASE_MATURITY
 
+# Namecoin: Taproot (bech32m) is not active
 ADDRESS_TYPES = [
-    "bech32m",
     "bech32",
     "p2sh-segwit",
     "legacy",
@@ -153,10 +153,6 @@ class AddressInputTypeGrouping(BitcoinTestFramework):
             self.log.debug(f"Making payment of {v} BTC to bech32")
             A.sendtoaddress(B.getnewaddress(address_type="bech32"), v)
 
-        for v in generate_payment_values(3, 10):
-            self.log.debug(f"Making payment of {v} BTC to bech32m")
-            A.sendtoaddress(B.getnewaddress(address_type="bech32m"), v)
-
         self.generate(A, 1)
 
         self.log.info("Sending payments from B to A")
@@ -167,7 +163,8 @@ class AddressInputTypeGrouping(BitcoinTestFramework):
             self.generate(A, 1)
             assert is_same_type(B, tx)
 
-        tx = self.make_payment(A, B, 30.99, random.choice(ADDRESS_TYPES))
+        # Namecoin: adjusted from 30.99 since we have 3 output types (30 BTC) instead of 4 (40 BTC)
+        tx = self.make_payment(A, B, 20.99, random.choice(ADDRESS_TYPES))
         assert not is_same_type(B, tx)
 
 

@@ -57,8 +57,8 @@ class RpcCreateMultiSigTest(BitcoinTestFramework):
         self.test_mixing_uncompressed_and_compressed_keys(node0)
         self.test_sortedmulti_descriptors_bip67()
 
-        # Check that bech32m is currently not allowed
-        assert_raises_rpc_error(-5, "createmultisig cannot create bech32m multisig addresses", self.nodes[0].createmultisig, 2, self.pub, "bech32m")
+        # Namecoin: Taproot (bech32m) is not active — rejected as unknown address type
+        assert_raises_rpc_error(-5, "Unknown address type 'bech32m'", self.nodes[0].createmultisig, 2, self.pub, "bech32m")
 
         self.log.info('Check correct encoding of multisig script for all n (1..20)')
         for nkeys in range(1, 20+1):

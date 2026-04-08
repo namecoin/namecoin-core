@@ -103,6 +103,9 @@ class PSBTTest(BitcoinTestFramework):
         assert signed_psbt_incomplete["complete"] is False
 
     def test_utxo_conversion(self):
+        # Namecoin: Taproot (bech32m) is not active — this test is segwit v1+ specific
+        self.log.info("Skipping segwit v1+ UTXO conversion test (Taproot not active on Namecoin)")
+        return
         self.log.info("Check that non-witness UTXOs are removed for segwit v1+ inputs")
         mining_node = self.nodes[2]
         offline_node = self.nodes[0]
@@ -118,8 +121,9 @@ class PSBTTest(BitcoinTestFramework):
         w2 = online_node.get_wallet_rpc(self.default_wallet_name)
 
         # Mine a transaction that credits the offline address
-        offline_addr = offline_node.getnewaddress(address_type="bech32m")
-        online_addr = w2.getnewaddress(address_type="bech32m")
+        # Namecoin: Taproot (bech32m) is not active
+        offline_addr = offline_node.getnewaddress(address_type="bech32")
+        online_addr = w2.getnewaddress(address_type="bech32")
         import_res = wonline.importdescriptors([{"desc": offline_node.getaddressinfo(offline_addr)["desc"], "timestamp": "now"}])
         assert_equal(import_res[0]["success"], True)
         mining_wallet = mining_node.get_wallet_rpc(self.default_wallet_name)
@@ -325,7 +329,8 @@ class PSBTTest(BitcoinTestFramework):
         def_wallet = self.nodes[0].get_wallet_rpc(self.default_wallet_name)
 
         outputs = [{wallet.getnewaddress(address_type="bech32"): 1}]
-        outputs.append({wallet.getnewaddress(address_type="bech32m"): 1})
+        # Namecoin: Taproot (bech32m) is not active, use bech32 instead
+        outputs.append({wallet.getnewaddress(address_type="bech32"): 1})
         descs = wallet.listdescriptors(True)["descriptors"]
         def_wallet.send(outputs)
         self.generate(self.nodes[0], 6)
@@ -1097,46 +1102,7 @@ class PSBTTest(BitcoinTestFramework):
         signed_tx = self.nodes[0].walletprocesspsbt(psbt)
         self.nodes[0].sendrawtransaction(signed_tx["hex"])
 
-        # Same test but for taproot
-        privkey, pubkey = generate_keypair(wif=True)
-
-        desc = descsum_create("tr({},pk({}))".format(H_POINT, pubkey.hex()))
-        res = watchonly.importdescriptors([{"desc": desc, "timestamp": "now"}])
-        assert res[0]["success"]
-        addr = self.nodes[0].deriveaddresses(desc)[0]
-        self.nodes[0].sendtoaddress(addr, 10)
-        self.generate(self.nodes[0], 1)
-        self.nodes[0].importdescriptors([{"desc": descsum_create("tr({})".format(privkey)), "timestamp":"now"}])
-
-        psbt = watchonly.sendall([wallet.getnewaddress(), addr])["psbt"]
-        processed_psbt = self.nodes[0].walletprocesspsbt(psbt)
-        txid = self.nodes[0].sendrawtransaction(processed_psbt["hex"])
-        vout = find_vout_for_address(self.nodes[0], txid, addr)
-
-        # Make sure tap tree is in psbt
-        parsed_psbt = PSBT.from_base64(psbt)
-        assert_greater_than(len(parsed_psbt.o[vout].map[PSBT_OUT_TAP_TREE]), 0)
-        assert "taproot_tree" in self.nodes[0].decodepsbt(psbt)["outputs"][vout]
-        parsed_psbt.make_blank()
-        comb_psbt = self.nodes[0].combinepsbt([psbt, parsed_psbt.to_base64()])
-        assert_equal(comb_psbt, psbt)
-
-        self.log.info("Test that walletprocesspsbt both updates and signs a non-updated psbt containing Taproot inputs")
-        addr = self.nodes[0].getnewaddress("", "bech32m")
-        utxo = self.create_outpoints(self.nodes[0], outputs=[{addr: 1}])[0]
-        psbt = self.nodes[0].createpsbt([utxo], [{self.nodes[0].getnewaddress(): 0.9999}])
-        signed = self.nodes[0].walletprocesspsbt(psbt)
-        rawtx = signed["hex"]
-        self.nodes[0].sendrawtransaction(rawtx)
-        self.generate(self.nodes[0], 1)
-
-        # Make sure tap tree is not in psbt
-        parsed_psbt = PSBT.from_base64(psbt)
-        assert PSBT_OUT_TAP_TREE not in parsed_psbt.o[0].map
-        assert "taproot_tree" not in self.nodes[0].decodepsbt(psbt)["outputs"][0]
-        parsed_psbt.make_blank()
-        comb_psbt = self.nodes[0].combinepsbt([psbt, parsed_psbt.to_base64()])
-        assert_equal(comb_psbt, psbt)
+        # Namecoin: Taproot (bech32m) is not active — skip taproot PSBT tests
 
         self.log.info("Test walletprocesspsbt raises if an invalid sighashtype is passed")
         assert_raises_rpc_error(-8, "'all' is not a valid sighash parameter.", self.nodes[0].walletprocesspsbt, psbt, sighashtype="all")
