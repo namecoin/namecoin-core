@@ -266,28 +266,13 @@ public:
   explicit MaybeWalletForRequest (const JSONRPCRequest& request)
   {
 #ifdef ENABLE_WALLET
-    try
-      {
-        /* GetWalletForJSONRPCRequest throws an internal error if there
-           is no wallet context.  We want to handle this situation gracefully
-           and just fall back to not having a wallet in this case.  */
-        if (util::AnyPtr<wallet::WalletContext> (request.context))
-          {
-            wallet = wallet::GetWalletForJSONRPCRequest (request);
-            return;
-          }
-      }
-    catch (const UniValue& exc)
-      {
-        const auto& code = exc["code"];
-        if (!code.isNum () || code.getInt<int> () != RPC_WALLET_NOT_SPECIFIED)
-          throw;
-
-      }
-
-    /* If the wallet is not set, that's fine, and we just indicate it to
-       other code (by having a null wallet).  */
-    wallet = nullptr;
+    /* Resolve the wallet via a wallet-side helper so the WalletContext
+       typeid lookup happens in the wallet translation unit.  Calling
+       util::AnyPtr<WalletContext> from this node-side TU yields a false
+       negative on platforms where typeinfo for wallet::WalletContext is
+       duplicated across the static node and wallet libraries (notably
+       macOS clang).  */
+    wallet = wallet::MaybeGetWalletForJSONRPCRequest (request);
 #endif
   }
 
