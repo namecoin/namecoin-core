@@ -789,7 +789,9 @@ name_pending ()
   NameOptionsHelp optHelp;
   optHelp
       .withNameEncoding ()
-      .withValueEncoding ();
+      .withValueEncoding ()
+      .withArg ("mineOnly", RPCArg::Type::BOOL, "false",
+                "Only return entries for names owned by the loaded wallet");
 
   return RPCMethod ("name_pending",
       "Lists unconfirmed name operations in the mempool.\n"
@@ -808,6 +810,7 @@ name_pending ()
       RPCExamples {
           HelpExampleCli ("name_pending", "")
         + HelpExampleCli ("name_pending", "\"d/domob\"")
+        + HelpExampleCli ("name_pending", "null '{\"mineOnly\":true}'")
         + HelpExampleRpc ("name_pending", "")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
@@ -825,6 +828,20 @@ name_pending ()
   if (hasNameFilter)
     nameFilter = DecodeNameFromRPCOrThrow (request.params[0], options);
 
+  bool mineOnly = false;
+  if (options.exists ("mineOnly"))
+    mineOnly = options["mineOnly"].get_bool ();
+#ifdef ENABLE_WALLET
+  const wallet::CWallet* const pwalletForMine = mineOnly ? wallet.getWallet () : nullptr;
+  if (mineOnly && pwalletForMine == nullptr)
+    throw JSONRPCError (RPC_WALLET_NOT_FOUND,
+                        "mineOnly requires a wallet to be loaded");
+#else
+  if (mineOnly)
+    throw JSONRPCError (RPC_METHOD_NOT_FOUND,
+                        "mineOnly requires wallet support, which is disabled");
+#endif
+
   UniValue arr(UniValue::VARR);
   for (const CTxMemPoolEntry& entry : mempool.entryAll ())
     {
@@ -840,6 +857,10 @@ name_pending ()
             continue;
           if (hasNameFilter && op.getOpName () != nameFilter)
             continue;
+#ifdef ENABLE_WALLET
+          if (mineOnly && !pwalletForMine->IsMine (op.getAddress ()))
+            continue;
+#endif
 
           UniValue obj = getNameInfo (options,
                                       op.getOpName (), op.getOpValue (),
