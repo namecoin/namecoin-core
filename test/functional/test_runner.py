@@ -410,6 +410,7 @@ BASE_SCRIPTS = [
     'name_immature_inputs.py',
     'name_ismine.py',
     'name_list.py',
+    'name_list_pending.py',
     'name_listunspent.py',
     'name_longsalt.py',
     'name_multisig.py',
