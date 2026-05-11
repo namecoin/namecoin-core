@@ -103,12 +103,21 @@ void DestinationAddressHelper::setOptions (const UniValue& opt)
   RPCTypeCheckObj (opt,
     {
       {"destAddress", UniValueType (UniValue::VSTR)},
+      {"dest_address", UniValueType (UniValue::VSTR)},
     },
     true, false);
-  if (!opt.exists ("destAddress"))
+
+  /* Accept both snake_case and camelCase for Bitcoin Core convention
+     alignment (see issue #551).  */
+  std::string addrStr;
+  if (opt.exists ("dest_address"))
+    addrStr = opt["dest_address"].get_str ();
+  else if (opt.exists ("destAddress"))
+    addrStr = opt["destAddress"].get_str ();
+  else
     return;
 
-  CTxDestination dest = DecodeDestination (opt["destAddress"].get_str ());
+  CTxDestination dest = DecodeDestination (addrStr);
   if (!IsValidDestination (dest))
     throw JSONRPCError (RPC_INVALID_ADDRESS_OR_KEY, "invalid address");
   overrideDest.reset (new CTxDestination (std::move (dest)));
@@ -149,6 +158,7 @@ SendNameOutput (const JSONRPCRequest& request,
   RPCTypeCheckObj (opt,
     {
       {"sendCoins", UniValueType (UniValue::VOBJ)},
+      {"send_coins", UniValueType (UniValue::VOBJ)},
     },
     true, false);
 
@@ -159,8 +169,11 @@ SendNameOutput (const JSONRPCRequest& request,
   std::vector<CRecipient> vecSend;
   vecSend.push_back ({dest, NAME_LOCKED_AMOUNT, false, nameOp});
 
-  if (opt.exists ("sendCoins"))
-    for (const std::string& addr : opt["sendCoins"].getKeys ())
+  /* Accept both send_coins (snake_case) and sendCoins (camelCase).  */
+  const std::string sendCoinsKey =
+      opt.exists ("send_coins") ? "send_coins" : "sendCoins";
+  if (opt.exists (sendCoinsKey))
+    for (const std::string& addr : opt[sendCoinsKey].getKeys ())
       {
         const CTxDestination coinDest = DecodeDestination (addr);
         if (!IsValidDestination (coinDest))
@@ -409,6 +422,7 @@ name_new ()
   RPCTypeCheckObj (options,
     {
       {"allowExisting", UniValueType (UniValue::VBOOL)},
+      {"allow_existing", UniValueType (UniValue::VBOOL)},
     },
     true, false);
 
@@ -416,7 +430,11 @@ name_new ()
   if (name.size () > MAX_NAME_LENGTH)
     throw JSONRPCError (RPC_INVALID_PARAMETER, "the name is too long");
 
-  if (!options["allowExisting"].isTrue ())
+  /* Accept both allow_existing (snake_case) and allowExisting (camelCase).  */
+  const bool allowExisting =
+      (options.exists ("allow_existing") && options["allow_existing"].isTrue ()) ||
+      (options.exists ("allowExisting") && options["allowExisting"].isTrue ());
+  if (!allowExisting)
     {
       LOCK (cs_main);
       CNameData oldData;
