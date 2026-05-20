@@ -934,6 +934,113 @@ BOOST_AUTO_TEST_CASE (name_expire_utxo)
 
 /* ************************************************************************** */
 
+BOOST_AUTO_TEST_CASE (name_prune_expired_history)
+{
+  /* Exercise CCoinsViewCache::PruneExpiredHistory in isolation.
+
+     The pruning routine looks up its own candidate set via the expire
+     index for the target height
+       targetHeight = nHeight - expirationDepth - pruneDepth
+     so we configure the test names such that their last update lands
+     exactly at that height.  */
+
+  fNameHistory = true;
+
+  const valtype nameRipe
+    = DecodeName ("prune-test-ripe", NameEncoding::ASCII);
+  const valtype nameNotYet
+    = DecodeName ("prune-test-notyet", NameEncoding::ASCII);
+  const valtype value1 = DecodeName ("v1", NameEncoding::ASCII);
+  const valtype value2 = DecodeName ("v2", NameEncoding::ASCII);
+  const CScript addr = getTestAddress ();
+
+  /* Use a backing CCoinsViewDB to exercise the GetNamesForHeight lookup
+     through the real expire-index code path, with our cache on top.  */
+  LOCK (cs_main);
+  CCoinsViewCache view(&m_node.chainman->ActiveChainstate ().CoinsTip ());
+
+  CBlockUndo undo;
+
+  /* Use the mainnet expirationDepth of 12000 for heights <= 24000.
+     With pruneDepth = 100, names ripe for pruning at nHeight = 14000
+     have their latest update at height 14000 - 12000 - 100 = 1900.  */
+  const unsigned expDepth = 12000;
+  const unsigned pruneDepth = 100;
+  const unsigned nHeight = 14000;
+  const unsigned targetHeight = nHeight - expDepth - pruneDepth;
+
+  /* nameRipe: firstupdate at 1850, update at targetHeight (1900).  */
+  CMutableTransaction mtx;
+  mtx.SetNamecoin ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameFirstupdate (
+                                  addr, nameRipe, value1, valtype (20, 'r'))));
+  ApplyNameTransaction (CTransaction (mtx), 1850, view, undo);
+  mtx.vout.clear ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameUpdate (
+                                  addr, nameRipe, value2)));
+  ApplyNameTransaction (CTransaction (mtx), targetHeight, view, undo);
+
+  /* nameNotYet: latest update one block AFTER the ripe target, so the
+     pruning threshold for it has not yet been crossed.  */
+  mtx.vout.clear ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameFirstupdate (
+                                  addr, nameNotYet, value1, valtype (20, 'n'))));
+  ApplyNameTransaction (CTransaction (mtx), 1850, view, undo);
+  mtx.vout.clear ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameUpdate (
+                                  addr, nameNotYet, value2)));
+  ApplyNameTransaction (CTransaction (mtx), targetHeight + 1, view, undo);
+
+  /* Sanity:  histories present for both names.  */
+  CNameHistory hist;
+  BOOST_CHECK (view.GetNameHistory (nameRipe, hist));
+  BOOST_CHECK_EQUAL (hist.getData ().size (), 1u);
+  BOOST_CHECK (view.GetNameHistory (nameNotYet, hist));
+  BOOST_CHECK_EQUAL (hist.getData ().size (), 1u);
+
+  /* pruneDepth = 0 must be an inert no-op.  */
+  view.PruneExpiredHistory (nHeight, expDepth, 0);
+  BOOST_CHECK (view.GetNameHistory (nameRipe, hist) && !hist.empty ());
+  BOOST_CHECK (view.GetNameHistory (nameNotYet, hist) && !hist.empty ());
+
+  /* fNameHistory = false must short-circuit.  */
+  fNameHistory = false;
+  view.PruneExpiredHistory (nHeight, expDepth, pruneDepth);
+  fNameHistory = true;
+  BOOST_CHECK (view.GetNameHistory (nameRipe, hist) && !hist.empty ());
+
+  /* The actual prune.  Only nameRipe (live entry at targetHeight,
+     expired, and matched by the expire-index lookup) gets pruned.
+     nameNotYet's live entry is one block past targetHeight, so its
+     expire-index entry is at targetHeight + 1 and is not visited.  */
+  view.PruneExpiredHistory (nHeight, expDepth, pruneDepth);
+
+  hist = CNameHistory ();
+  BOOST_CHECK (view.GetNameHistory (nameRipe, hist));
+  BOOST_CHECK (hist.empty ());
+
+  hist = CNameHistory ();
+  BOOST_CHECK (view.GetNameHistory (nameNotYet, hist));
+  BOOST_CHECK (!hist.empty ());
+
+  /* Mining one more block makes nameNotYet ripe.  */
+  view.PruneExpiredHistory (nHeight + 1, expDepth, pruneDepth);
+  hist = CNameHistory ();
+  BOOST_CHECK (view.GetNameHistory (nameNotYet, hist));
+  BOOST_CHECK (hist.empty ());
+
+  /* nHeight too small to host any candidates -> no-op (no underflow).  */
+  view.PruneExpiredHistory (1, expDepth, pruneDepth);
+
+  fNameHistory = false;
+}
+
+/* ************************************************************************** */
+
 BOOST_AUTO_TEST_CASE (encoding_to_from_string)
 {
   for (const std::string& encStr : {"ascii", "utf8", "hex"})

@@ -417,6 +417,7 @@ BASE_SCRIPTS = [
     'name_multiupdate.py',
     'name_novalue.py',
     'name_pending.py',
+    'name_prune_history.py',
     'name_psbt.py',
     'name_rawtx.py',
     'name_registration.py',

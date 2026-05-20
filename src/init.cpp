@@ -546,6 +546,9 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
                  " If <type> is not supplied or if <type> = 1, indexes for all known types are enabled.",
                  ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     gArgs.AddArg("-namehistory", strprintf("Keep track of the full name history (default: %u)", 0), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
+    gArgs.AddArg("-prunenamehistory=<n>",
+                 strprintf("If -namehistory is enabled, drop history entries for fully-expired names whose last update is older than <n> blocks. 0 = disabled. Node-local, irreversible across reorgs (default: %u)", 0),
+                 ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
     gArgs.AddArg("-namehashindex", strprintf("Maintain an index of name hashes to preimages (default: %u)", DEFAULT_NAMEHASHINDEX), ArgsManager::ALLOW_ANY, OptionsCategory::OPTIONS);
 
     argsman.AddArg("-addnode=<ip>", strprintf("Add a node to connect to and attempt to keep the connection open (see the addnode RPC help for more info). This option can be specified multiple times to add multiple nodes; connections are limited to %u at a time and are counted separately from the -maxconnections limit.", MAX_ADDNODE_CONNECTIONS), ArgsManager::ALLOW_ANY | ArgsManager::NETWORK_ONLY, OptionsCategory::CONNECTION);
@@ -1028,6 +1031,10 @@ bool AppInitParameterInteraction(const ArgsManager& args)
         }
     }
 
+    if (args.GetIntArg("-prunenamehistory", 0) < 0) {
+        return InitError(_("-prunenamehistory must be a non-negative integer."));
+    }
+
     // If -forcednsseed is set to true, ensure -dnsseed has not been set to false
     if (args.GetBoolArg("-forcednsseed", DEFAULT_FORCEDNSSEED) && !args.GetBoolArg("-dnsseed", DEFAULT_DNSSEED)){
         return InitError(_("Cannot set -forcednsseed to true when setting -dnsseed to false."));
@@ -1402,6 +1409,10 @@ static ChainstateLoadResult InitAndLoadChainstate(
         }
     };
     fNameHistory = args.GetBoolArg("-namehistory", false);
+    nPruneNameHistory = static_cast<unsigned>(args.GetIntArg("-prunenamehistory", 0));
+    if (nPruneNameHistory > 0 && !fNameHistory) {
+        LogWarning("-prunenamehistory was set but -namehistory is disabled; name history pruning will not take effect.\n");
+    }
     node::ChainstateLoadOptions options;
     options.mempool = Assert(node.mempool.get());
     options.wipe_chainstate_db = do_reindex || do_reindex_chainstate;

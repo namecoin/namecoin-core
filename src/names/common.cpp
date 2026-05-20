@@ -7,6 +7,7 @@
 #include <script/names.h>
 
 bool fNameHistory = false;
+unsigned nPruneNameHistory = 0;
 
 /* ************************************************************************** */
 /* CNameData.  */
