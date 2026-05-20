@@ -407,6 +407,7 @@ BASE_SCRIPTS = [
     #'name_deterministic_salt.py',
     'name_encodings.py',
     'name_expiration.py',
+    'name_expireidx_reindex.py',
     'name_immature_inputs.py',
     'name_ismine.py',
     'name_list.py',

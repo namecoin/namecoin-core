@@ -657,6 +657,7 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
     // Checkpoints were removed. We keep `-checkpoints` as a hidden arg to display a more user friendly error when set.
     argsman.AddArg("-checkpoints", "", ArgsManager::ALLOW_ANY, OptionsCategory::HIDDEN);
     argsman.AddArg("-deprecatedrpc=<method>", "Allows deprecated RPC method(s) to be used", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
+    argsman.AddArg("-debugforgetnamedbversion", "Erase the on-disk name database format version on startup. For functional test use only; simulates a database written by a release that predates the format version marker.", ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::HIDDEN);
     argsman.AddArg("-stopafterblockimport", strprintf("Stop running after importing blocks from disk (default: %u)", DEFAULT_STOPAFTERBLOCKIMPORT), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-stopatheight", strprintf("Stop running after reaching the given height in the main chain (default: %u). Blocks after target height may be processed during shutdown.", DEFAULT_STOPATHEIGHT), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
     argsman.AddArg("-limitancestorcount=<n>", strprintf("Deprecated setting to not accept transactions if number of in-mempool ancestors is <n> or more (default: %u); replaced by cluster limits (see -limitclustercount) and only used by wallet for coin selection", DEFAULT_ANCESTOR_LIMIT), ArgsManager::ALLOW_ANY | ArgsManager::DEBUG_ONLY, OptionsCategory::DEBUG_TEST);
@@ -1407,6 +1408,7 @@ static ChainstateLoadResult InitAndLoadChainstate(
     options.wipe_chainstate_db = do_reindex || do_reindex_chainstate;
     options.prune = chainman.m_blockman.IsPruneMode();
     options.nameHistory = fNameHistory;
+    options.debug_forget_namedb_version = args.GetBoolArg("-debugforgetnamedbversion", false);
     options.check_blocks = args.GetIntArg("-checkblocks", DEFAULT_CHECKBLOCKS);
     options.check_level = args.GetIntArg("-checklevel", DEFAULT_CHECKLEVEL);
     options.require_full_verification = args.IsArgSet("-checkblocks") || args.IsArgSet("-checklevel");

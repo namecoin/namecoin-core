@@ -106,13 +106,28 @@ static ChainstateLoadResult CompleteChainstateInitialization(
             chainstate->CoinsErrorCatcher().AddReadErrCallback(options.coins_error_cb);
         }
 
+        // Test-only hook: drop the name DB format version so the next
+        // startup detects a legacy database.  Used by the functional
+        // test for -reindex-chainstate recovery.  The current startup
+        // proceeds normally; only the next plain startup will see the
+        // missing marker and refuse to load.
+        const bool skip_namedb_version_check =
+            options.debug_forget_namedb_version && !options.wipe_chainstate_db;
+        if (skip_namedb_version_check) {
+            chainstate->CoinsDB().EraseNameDbVersionForTesting();
+        }
+
         // Refuse to load unsupported database format.
         // This is a no-op if we cleared the coinsviewdb with -reindex or -reindex-chainstate
-        if (chainstate->CoinsDB().NeedsUpgrade()) {
+        if (!skip_namedb_version_check && chainstate->CoinsDB().NeedsUpgrade()) {
             return {ChainstateLoadStatus::FAILURE_INCOMPATIBLE_DB, _("Unsupported chainstate database format found. "
                                                                      "Please restart with -reindex-chainstate. This will "
                                                                      "rebuild the chainstate database.")};
         }
+
+        // For a fresh or wiped chainstate, stamp the current name DB
+        // format version so subsequent startups can recognise the layout.
+        chainstate->CoinsDB().MaybeStampNameDbVersion();
 
         // ReplayBlocks is a no-op if we cleared the coinsviewdb with -reindex or -reindex-chainstate
         if (!chainstate->ReplayBlocks()) {

@@ -29,23 +29,71 @@ static constexpr uint8_t DB_COIN{'C'};
 static constexpr uint8_t DB_NAME{'n'};
 static constexpr uint8_t DB_NAME_HISTORY{'h'};
 static constexpr uint8_t DB_NAME_EXPIRY{'x'};
+static constexpr uint8_t DB_NAME_DB_VERSION{'v'};
 
 static constexpr uint8_t DB_BEST_BLOCK{'B'};
 static constexpr uint8_t DB_HEAD_BLOCKS{'H'};
 // Keys used in previous version that might still be found in the DB:
 static constexpr uint8_t DB_COINS{'c'};
 
+// On-disk format versions for the name database portion of the coins
+// LevelDB.  Bumped when DB_NAME / DB_NAME_HISTORY / DB_NAME_EXPIRY change
+// their layout.
+static constexpr uint32_t NAME_DB_VERSION_LEGACY{0};
+static constexpr uint32_t NAME_DB_VERSION_PACKED_EXPIRY{1};
+static constexpr uint32_t NAME_DB_VERSION_CURRENT{NAME_DB_VERSION_PACKED_EXPIRY};
+
 // Threshold for warning when writing this many dirty cache entries to disk.
 static constexpr size_t WARN_FLUSH_COINS_COUNT{10'000'000};
 
+namespace {
+
+/** Returns true iff the database has any DB_NAME row. */
+bool HasAnyNameRow(CDBWrapper& db)
+{
+    std::unique_ptr<CDBIterator> cursor{db.NewIterator()};
+    cursor->Seek(std::make_pair(DB_NAME, valtype()));
+    if (!cursor->Valid())
+        return false;
+    std::pair<uint8_t, valtype> key;
+    return cursor->GetKey(key) && key.first == DB_NAME;
+}
+
+} // namespace
+
 bool CCoinsViewDB::NeedsUpgrade()
 {
-    std::unique_ptr<CDBIterator> cursor{m_db->NewIterator()};
-    // DB_COINS was deprecated in v0.15.0, commit
-    // 1088b02f0ccd7358d2b7076bb9e122d59d502d02
-    cursor->Seek(std::make_pair(DB_COINS, uint256{}));
-    std::pair<uint8_t, uint256> key;
-    return cursor->Valid() && cursor->GetKey(key) && key.first == DB_COINS;
+    {
+        std::unique_ptr<CDBIterator> cursor{m_db->NewIterator()};
+        // DB_COINS was deprecated in v0.15.0, commit
+        // 1088b02f0ccd7358d2b7076bb9e122d59d502d02
+        cursor->Seek(std::make_pair(DB_COINS, uint256{}));
+        std::pair<uint8_t, uint256> key;
+        if (cursor->Valid() && cursor->GetKey(key) && key.first == DB_COINS)
+            return true;
+    }
+
+    /* Check the name database format version.  A database that already
+       has name rows but no DB_NAME_DB_VERSION entry is in the pre-packed
+       expire-index layout and must be reindexed.  */
+    uint32_t version{NAME_DB_VERSION_LEGACY};
+    if (!m_db->Read(DB_NAME_DB_VERSION, version))
+        return HasAnyNameRow(*m_db);
+    return version != NAME_DB_VERSION_CURRENT;
+}
+
+void CCoinsViewDB::MaybeStampNameDbVersion()
+{
+    /* Only stamp a fresh / wiped database that has no name rows yet.
+       Existing databases without a marker are handled by NeedsUpgrade,
+       which refuses to load them until the user reindexes.  */
+    if (m_db->Exists(DB_NAME_DB_VERSION))
+        return;
+    if (HasAnyNameRow(*m_db))
+        return;
+    CDBBatch batch(*m_db);
+    batch.Write(DB_NAME_DB_VERSION, NAME_DB_VERSION_CURRENT);
+    m_db->WriteBatch(batch, /*fSync=*/true);
 }
 
 namespace {
@@ -125,32 +173,21 @@ bool CCoinsViewDB::GetNameHistory(const valtype &name, CNameHistory& data) const
 bool CCoinsViewDB::GetNamesForHeight(unsigned nHeight, std::set<valtype>& names) const {
     names.clear();
 
-    /* It seems that there are no "const iterators" for LevelDB.  Since we
-       only need read operations on it, use a const-cast to get around
-       that restriction.  */
-    std::unique_ptr<CDBIterator> pcursor(const_cast<CDBWrapper*>(m_db.get())->NewIterator());
+    /* The expire index is stored as a single row per height whose value
+       is the sorted vector of names that expire at that height.  A point
+       read therefore returns the entire result for the height.  */
+    std::vector<valtype> packed;
+    if (!m_db->Read(std::make_pair(DB_NAME_EXPIRY,
+                                   CNameCache::ExpireKey(nHeight)),
+                    packed))
+        return true;
 
-    const CNameCache::ExpireEntry seekEntry(nHeight, valtype ());
-    pcursor->Seek(std::make_pair(DB_NAME_EXPIRY, seekEntry));
-
-    for (; pcursor->Valid(); pcursor->Next())
-    {
-        std::pair<uint8_t, CNameCache::ExpireEntry> key;
-        if (!pcursor->GetKey(key) || key.first != DB_NAME_EXPIRY)
-            break;
-        const CNameCache::ExpireEntry& entry = key.second;
-
-        assert (entry.nHeight >= nHeight);
-        if (entry.nHeight > nHeight)
-          break;
-
-        const valtype& name = entry.name;
-        if (names.count(name) > 0) {
+    for (const valtype& name : packed) {
+        if (!names.insert(name).second) {
             LogError ("%s : duplicate name %s in expire index",
                       __func__, EncodeNameForMessage(name));
             return false;
         }
-        names.insert(name);
     }
 
     return true;
@@ -267,7 +304,7 @@ void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block
         }
     }
 
-    names.writeBatch(batch);
+    names.writeBatch(*m_db, batch);
 
     // In the last batch, mark the database as consistent with block_hash again.
     batch.Erase(DB_HEAD_BLOCKS);
@@ -281,6 +318,13 @@ void CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block
 size_t CCoinsViewDB::EstimateSize() const
 {
     return m_db->EstimateSize(DB_COIN, uint8_t(DB_COIN + 1));
+}
+
+void CCoinsViewDB::EraseNameDbVersionForTesting()
+{
+    CDBBatch batch(*m_db);
+    batch.Erase(DB_NAME_DB_VERSION);
+    m_db->WriteBatch(batch, /*fSync=*/true);
 }
 
 /** Specialization of CCoinsViewCursor to iterate over a CCoinsViewDB */
@@ -465,21 +509,44 @@ bool CCoinsViewDB::ValidateNameDB(const Chainstate& chainState, const std::funct
 
         case DB_NAME_EXPIRY:
         {
-            std::pair<uint8_t, CNameCache::ExpireEntry> key;
+            std::pair<uint8_t, CNameCache::ExpireKey> key;
             if (!pcursor->GetKey(key) || key.first != DB_NAME_EXPIRY) {
                 LogError ("%s : failed to read DB_NAME_EXPIRY key", __func__);
                 return false;
             }
-            const CNameCache::ExpireEntry& entry = key.second;
-            const valtype& name = entry.name;
+            const unsigned height = key.second.nHeight;
 
-            if (nameHeightsIndex.count(name) > 0) {
-                LogError ("%s : name %s duplicated in expire idnex",
-                          __func__, EncodeNameForMessage(name));
+            std::vector<valtype> packed;
+            if (!pcursor->GetValue(packed)) {
+                LogError ("%s : failed to read DB_NAME_EXPIRY value",
+                          __func__);
                 return false;
             }
 
-            nameHeightsIndex.insert(std::make_pair(name, entry.nHeight));
+            if (packed.empty()) {
+                LogError ("%s : empty expire-index row at height %u",
+                          __func__, height);
+                return false;
+            }
+
+            valtype previous;
+            bool havePrevious = false;
+            for (const valtype& name : packed) {
+                if (havePrevious && !(previous < name)) {
+                    LogError ("%s : expire-index row at height %u not"
+                              " strictly sorted", __func__, height);
+                    return false;
+                }
+                previous = name;
+                havePrevious = true;
+
+                if (nameHeightsIndex.count(name) > 0) {
+                    LogError ("%s : name %s duplicated in expire index",
+                              __func__, EncodeNameForMessage(name));
+                    return false;
+                }
+                nameHeightsIndex.insert(std::make_pair(name, height));
+            }
             break;
         }
 
@@ -532,7 +599,7 @@ bool CCoinsViewDB::ValidateNameDB(const Chainstate& chainState, const std::funct
 }
 
 void
-CNameCache::writeBatch (CDBBatch& batch) const
+CNameCache::writeBatch (const CDBWrapper& db, CDBBatch& batch) const
 {
   for (EntryMap::const_iterator i = entries.begin ();
        i != entries.end (); ++i)
@@ -550,10 +617,37 @@ CNameCache::writeBatch (CDBBatch& batch) const
     else
       batch.Write (std::make_pair (DB_NAME_HISTORY, i->first), i->second);
 
+  /* The expire index is stored as one row per height containing the
+     sorted vector of names that expire at that height.  Group the
+     cached add/remove deltas by height, then do one read-modify-write
+     against the database per distinct touched height.  Erase the row
+     entirely if the resulting set is empty.  */
+  std::map<unsigned, std::map<valtype, bool> > byHeight;
   for (std::map<ExpireEntry, bool>::const_iterator i = expireIndex.begin ();
        i != expireIndex.end (); ++i)
-    if (i->second)
-      batch.Write (std::make_pair (DB_NAME_EXPIRY, i->first));
-    else
-      batch.Erase (std::make_pair (DB_NAME_EXPIRY, i->first));
+    byHeight[i->first.nHeight][i->first.name] = i->second;
+
+  for (std::map<unsigned, std::map<valtype, bool> >::const_iterator
+         h = byHeight.begin (); h != byHeight.end (); ++h)
+    {
+      const ExpireKey key (h->first);
+      std::vector<valtype> packed;
+      db.Read (std::make_pair (DB_NAME_EXPIRY, key), packed);
+
+      std::set<valtype> merged (packed.begin (), packed.end ());
+      for (std::map<valtype, bool>::const_iterator d = h->second.begin ();
+           d != h->second.end (); ++d)
+        if (d->second)
+          merged.insert (d->first);
+        else
+          merged.erase (d->first);
+
+      if (merged.empty ())
+        batch.Erase (std::make_pair (DB_NAME_EXPIRY, key));
+      else
+        {
+          packed.assign (merged.begin (), merged.end ());
+          batch.Write (std::make_pair (DB_NAME_EXPIRY, key), packed);
+        }
+    }
 }

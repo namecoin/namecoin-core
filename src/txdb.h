@@ -55,7 +55,23 @@ public:
 
     //! Whether an unsupported database format is used.
     bool NeedsUpgrade();
+
+    //! Write the current name-database format version into the chainstate
+    //! if it is not already present and the database has no name rows yet.
+    //! Called once at startup, after wiping if applicable, so that a fresh
+    //! or reindexed database is unambiguously stamped as belonging to the
+    //! current layout.  No-op if the version key is already present or if
+    //! name data exists without a matching version (that case is the
+    //! responsibility of NeedsUpgrade).
+    void MaybeStampNameDbVersion();
+
     size_t EstimateSize() const override;
+
+    //! Erase the name-database format version marker.  Used only by the
+    //! functional test that exercises the legacy-format detection path;
+    //! exposed here so the test can simulate a database written by an
+    //! older release that never wrote the version key.
+    void EraseNameDbVersionForTesting();
 
     //! Dynamically alter the underlying leveldb cache size.
     void ResizeCache(size_t new_cache_size) EXCLUSIVE_LOCKS_REQUIRED(cs_main);

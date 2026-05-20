@@ -15,6 +15,7 @@
 
 class CNameScript;
 class CDBBatch;
+class CDBWrapper;
 
 /** Whether or not name history is enabled.  */
 extern bool fNameHistory;
@@ -324,6 +325,58 @@ public:
   };
 
   /**
+   * Key type for the packed expire index.  Wraps a height and serialises
+   * it in big-endian order, so that LevelDB key ordering matches the
+   * natural numeric ordering by height.  The on-disk row for a given
+   * height contains the sorted vector of names that expire at that
+   * height.
+   */
+  class ExpireKey
+  {
+  public:
+
+    uint32_t nHeight;
+
+    inline ExpireKey ()
+      : nHeight(0)
+    {}
+
+    inline explicit ExpireKey (uint32_t h)
+      : nHeight(h)
+    {}
+
+    template<typename Stream>
+      inline void
+      Serialize (Stream& s) const
+    {
+      const uint32_t nHeightFlipped = htobe32_internal (nHeight);
+      ::Serialize (s, nHeightFlipped);
+    }
+
+    template<typename Stream>
+      inline void
+      Unserialize (Stream& s)
+    {
+      uint32_t nHeightFlipped;
+      ::Unserialize (s, nHeightFlipped);
+      nHeight = be32toh_internal (nHeightFlipped);
+    }
+
+    friend inline bool
+    operator== (const ExpireKey& a, const ExpireKey& b)
+    {
+      return a.nHeight == b.nHeight;
+    }
+
+    friend inline bool
+    operator< (const ExpireKey& a, const ExpireKey& b)
+    {
+      return a.nHeight < b.nHeight;
+    }
+
+  };
+
+  /**
    * Type of name entry map.  This is public because it is also used
    * by the unit tests.
    */
@@ -432,8 +485,12 @@ public:
   /* Apply all the changes in the passed-in record on top of this one.  */
   void apply (const CNameCache& cache);
 
-  /* Write all cached changes to a database batch update object.  */
-  void writeBatch (CDBBatch& batch) const;
+  /* Write all cached changes to a database batch update object.  The
+     wrapper is needed because the packed expire index is stored as one
+     row per height, so committing cached add/remove deltas requires
+     reading the existing on-disk set and writing back the merged set
+     (or erasing the row entirely if it is now empty).  */
+  void writeBatch (const CDBWrapper& db, CDBBatch& batch) const;
 
 };
 

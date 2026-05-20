@@ -157,6 +157,52 @@ class NameExpirationTest (NameTestFramework):
     self.node.reconsiderblock (undoBlk)
     assert_equal (self.node.getrawmempool (), [])
 
+    # Round-trip check across a daemon restart.  Register a small batch
+    # of names that all share the same expiration height, restart the
+    # node, and verify that the expire index round-trips cleanly through
+    # the on-disk store.  Then mine the block at which they expire and
+    # confirm they really do.
+    self.log.info ("daemon-restart round-trip of the expire index")
+
+    batchNames = ["round-trip-1", "round-trip-2", "round-trip-3",
+                  "round-trip-4"]
+    batchNew = {nm: self.node.name_new (nm) for nm in batchNames}
+    self.generate (self.node, 12)
+    for nm in batchNames:
+      self.firstupdateName (0, nm, batchNew[nm], "v-" + nm)
+    self.generate (self.node, 1)
+
+    for nm in batchNames:
+      self.checkName (0, nm, "v-" + nm, None, False)
+      self.checkUTXO (nm, True)
+
+    expiresIn = self.node.name_show (batchNames[0])['expires_in']
+
+    # Restart and verify nothing is lost across the on-disk round-trip.
+    self.restart_node (0)
+    self.node = self.nodes[0]
+    for nm in batchNames:
+      data = self.node.name_show (nm)
+      assert_equal (data['value'], "v-" + nm)
+      assert_equal (data['expired'], False)
+      assert_equal (data['expires_in'], expiresIn)
+      self.checkUTXO (nm, True)
+
+    # Mine past the expiration cliff.  Every name in the batch should
+    # expire in the same block (they share a creation height).
+    self.generate (self.node, expiresIn)
+    for nm in batchNames:
+      self.checkName (0, nm, "v-" + nm, 0, True)
+      self.checkUTXO (nm, False)
+
+    # One more restart, this time after the expiration, just to make
+    # sure the post-expiration state also survives a flush + reopen.
+    self.restart_node (0)
+    self.node = self.nodes[0]
+    for nm in batchNames:
+      self.checkName (0, nm, "v-" + nm, 0, True)
+      self.checkUTXO (nm, False)
+
 
 if __name__ == '__main__':
   NameExpirationTest (__file__).main ()

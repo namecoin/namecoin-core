@@ -33,6 +33,10 @@ struct ChainstateLoadOptions {
     //! helpful for running with a small cache.
     bool require_full_verification{true};
     bool nameHistory{false};
+    //! Test-only: erase the name DB format version on startup so the
+    //! "unsupported chainstate database format" detection path can be
+    //! exercised from functional tests without shipping a prior release.
+    bool debug_forget_namedb_version{false};
     int64_t check_blocks{DEFAULT_CHECKBLOCKS};
     int64_t check_level{DEFAULT_CHECKLEVEL};
     std::function<void()> coins_error_cb;
