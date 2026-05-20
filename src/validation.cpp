@@ -2695,6 +2695,18 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         return false;
     }
 
+    /* Optionally drop history entries for names whose grace period ends
+       in this block.  This is a node-local optimisation; see the
+       -prunenamehistory option.  Pruning is irreversible across reorgs,
+       so it is gated on an explicit opt-in.  */
+    if (fNameHistory && nPruneNameHistory > 0) {
+        const unsigned expireHeight = pindex->nHeight + 1;
+        const unsigned expirationDepth
+          = params.GetConsensus ().rules->NameExpirationDepth (expireHeight);
+        view.PruneExpiredHistory (expireHeight, expirationDepth,
+                                  nPruneNameHistory);
+    }
+
     if (!m_blockman.WriteBlockUndo(blockundo, state, *pindex)) {
         return false;
     }

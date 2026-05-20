@@ -19,6 +19,14 @@ class CDBBatch;
 /** Whether or not name history is enabled.  */
 extern bool fNameHistory;
 
+/**
+ * Number of blocks of "grace" after a name's final expiration before its
+ * history entry is dropped from DB_NAME_HISTORY.  Zero disables pruning
+ * entirely.  This is a node-local policy option (-prunenamehistory) and has
+ * no consensus impact.
+ */
+extern unsigned nPruneNameHistory;
+
 /* ************************************************************************** */
 /* CNameData.  */
 

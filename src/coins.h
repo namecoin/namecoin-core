@@ -480,6 +480,27 @@ public:
     void DeleteName(const valtype &name);
 
     /**
+     * Drop DB_NAME_HISTORY entries for fully-expired names whose final
+     * update became expired more than pruneDepth blocks ago.  This is a
+     * node-local optimisation and has no consensus impact; it does not
+     * touch DB_NAME or the UTXO set.  Pruning is irreversible across
+     * reorgs:  if the expiry block is later disconnected, the dropped
+     * history is permanently lost on this node.
+     *
+     * The set of candidates is determined by looking up the expire-index
+     * entries whose original update height is exactly
+     * nHeight - expirationDepth - pruneDepth, i.e. names whose configured
+     * grace period ends in this block.
+     *
+     * @param nHeight           The current block height (after ExpireNames).
+     * @param expirationDepth   Consensus expiration depth at nHeight.
+     * @param pruneDepth        Grace period in blocks past expiration
+     *                          before history is dropped.
+     */
+    void PruneExpiredHistory(unsigned nHeight, unsigned expirationDepth,
+                             unsigned pruneDepth);
+
+    /**
      * Check if we have the given utxo already loaded in this cache.
      * The semantics are the same as HaveCoin(), but no calls to
      * the backing CCoinsView are made.
