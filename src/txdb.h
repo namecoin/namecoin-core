@@ -48,6 +48,7 @@ public:
     bool GetName(const valtype &name, CNameData &data) const override;
     bool GetNameHistory(const valtype &name, CNameHistory &data) const override;
     bool GetNamesForHeight(unsigned nHeight, std::set<valtype>& data) const override;
+    bool GetHistoryNamesForHeight(unsigned nHeight, std::set<valtype>& data) const override;
     CNameIterator* IterateNames() const override;
     void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash, const CNameCache& names) override;
     std::unique_ptr<CCoinsViewCursor> Cursor() const override;

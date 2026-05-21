@@ -19,6 +19,17 @@ class CDBBatch;
 /** Whether or not name history is enabled.  */
 extern bool fNameHistory;
 
+/**
+ * Number of blocks of "grace" past the consensus expiration depth before
+ * a name_history entry is dropped from DB_NAME_HISTORY.  Applied uniformly
+ * to live, expired, and renewed names: any history entry whose own update
+ * height is more than (expirationDepth + nPruneNameHistory) blocks deep
+ * is eligible to be trimmed.  Zero disables pruning entirely.  This is a
+ * node-local policy option (-prunenamehistory) and has no consensus
+ * impact.
+ */
+extern unsigned nPruneNameHistory;
+
 /* ************************************************************************** */
 /* CNameData.  */
 
@@ -190,6 +201,27 @@ public:
     data.pop_back ();
   }
 
+  /**
+   * Drop the leading (oldest) entries whose own height is <= the given
+   * cutoff height, keeping the remaining tail of the vector.  Entries
+   * are kept height-ordered by the push() precondition, so the cut is
+   * a single contiguous prefix.  Used by the optional node-local
+   * history-pruning policy.
+   * @param cutoffHeight  Highest height to drop (entries with
+   *                      nHeight <= cutoffHeight are removed).
+   * @return Number of entries removed.
+   */
+  inline size_t
+  trimBelowOrEqual (unsigned cutoffHeight)
+  {
+    auto it = data.begin ();
+    while (it != data.end () && it->getHeight () <= cutoffHeight)
+      ++it;
+    const size_t removed = static_cast<size_t> (it - data.begin ());
+    data.erase (data.begin (), it);
+    return removed;
+  }
+
 };
 
 /* ************************************************************************** */
@@ -348,6 +380,16 @@ private:
    */
   std::map<ExpireEntry, bool> expireIndex;
 
+  /**
+   * Changes to be performed to the history-expire index.  Keyed by
+   * the height at which an individual DB_NAME_HISTORY entry was written
+   * (not by the name's current live height) and append-only on a per
+   * (height, name) basis: every time a CNameHistory push happens we
+   * record an add here, and undo / trim drop the matching key.  The
+   * map value mirrors expireIndex: true = add, false = erase.
+   */
+  std::map<ExpireEntry, bool> historyExpireIndex;
+
   friend class CCacheNameIterator;
 
 public:
@@ -359,6 +401,7 @@ public:
     deleted.clear ();
     history.clear ();
     expireIndex.clear ();
+    historyExpireIndex.clear ();
   }
 
   /**
@@ -372,7 +415,8 @@ public:
   {
     if (entries.empty () && deleted.empty ())
       {
-        assert (history.empty () && expireIndex.empty ());
+        assert (history.empty () && expireIndex.empty ()
+                && historyExpireIndex.empty ());
         return true;
       }
 
@@ -428,6 +472,30 @@ public:
 
   /* Remove an expire-index entry.  */
   void removeExpireIndex (const valtype& name, unsigned height);
+
+  /**
+   * For a given target height, return the set of names that have a
+   * DB_NAME_HISTORY entry pinned at that height.  Combines cached
+   * deltas (historyExpireIndex) with the passed-in base set, which the
+   * caller has typically obtained from the DB layer.  Behaviour mirrors
+   * updateNamesForHeight.
+   * @param nHeight  The height to query.
+   * @param names    In/out: set of names; entries added or removed in
+   *                 place according to the cached deltas.
+   */
+  void updateHistoryNamesForHeight (unsigned nHeight,
+                                    std::set<valtype>& names) const;
+
+  /* Add a history-expire-index entry.  Called from SetName when a
+     CNameHistory push happens.  height is the height of the *pushed*
+     CNameData (i.e. the old data being archived), not the new live
+     height.  */
+  void addHistoryExpireIndex (const valtype& name, unsigned height);
+
+  /* Remove a history-expire-index entry.  Called from the SetName undo
+     path when a CNameHistory pop happens, and from the trim driver
+     when it erases an index key after consuming it.  */
+  void removeHistoryExpireIndex (const valtype& name, unsigned height);
 
   /* Apply all the changes in the passed-in record on top of this one.  */
   void apply (const CNameCache& cache);

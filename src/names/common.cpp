@@ -7,6 +7,7 @@
 #include <script/names.h>
 
 bool fNameHistory = false;
+unsigned nPruneNameHistory = 0;
 
 /* ************************************************************************** */
 /* CNameData.  */
@@ -271,6 +272,42 @@ CNameCache::removeExpireIndex (const valtype& name, unsigned height)
 }
 
 void
+CNameCache::updateHistoryNamesForHeight (unsigned nHeight,
+                                         std::set<valtype>& names) const
+{
+  const ExpireEntry seekEntry(nHeight, valtype ());
+  std::map<ExpireEntry, bool>::const_iterator it;
+
+  for (it = historyExpireIndex.lower_bound (seekEntry);
+       it != historyExpireIndex.end (); ++it)
+    {
+      const ExpireEntry& cur = it->first;
+      assert (cur.nHeight >= nHeight);
+      if (cur.nHeight > nHeight)
+        break;
+
+      if (it->second)
+        names.insert (cur.name);
+      else
+        names.erase (cur.name);
+    }
+}
+
+void
+CNameCache::addHistoryExpireIndex (const valtype& name, unsigned height)
+{
+  const ExpireEntry entry(height, name);
+  historyExpireIndex[entry] = true;
+}
+
+void
+CNameCache::removeHistoryExpireIndex (const valtype& name, unsigned height)
+{
+  const ExpireEntry entry(height, name);
+  historyExpireIndex[entry] = false;
+}
+
+void
 CNameCache::apply (const CNameCache& cache)
 {
   for (EntryMap::const_iterator i = cache.entries.begin ();
@@ -288,4 +325,9 @@ CNameCache::apply (const CNameCache& cache)
   for (std::map<ExpireEntry, bool>::const_iterator i
         = cache.expireIndex.begin (); i != cache.expireIndex.end (); ++i)
     expireIndex[i->first] = i->second;
+
+  for (std::map<ExpireEntry, bool>::const_iterator i
+        = cache.historyExpireIndex.begin ();
+       i != cache.historyExpireIndex.end (); ++i)
+    historyExpireIndex[i->first] = i->second;
 }

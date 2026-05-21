@@ -29,6 +29,16 @@ static constexpr uint8_t DB_COIN{'C'};
 static constexpr uint8_t DB_NAME{'n'};
 static constexpr uint8_t DB_NAME_HISTORY{'h'};
 static constexpr uint8_t DB_NAME_EXPIRY{'x'};
+// History-tail expire index: keyed by (height, name), value is empty.
+// Records the height of each individual entry archived into
+// DB_NAME_HISTORY (i.e. the *previous* live height at the moment of an
+// update), not the name's current live height.  Entries are added by
+// SetName when an old CNameData gets pushed onto the history stack,
+// removed by SetName-undo when the corresponding push is reversed, and
+// consumed by CCoinsViewCache::PruneExpiredHistory.  Append-only with
+// respect to renewals: a name updated many times has many distinct
+// keys here, one per archived entry.
+static constexpr uint8_t DB_NAME_HISTORY_EXPIRY{'y'};
 
 static constexpr uint8_t DB_BEST_BLOCK{'B'};
 static constexpr uint8_t DB_HEAD_BLOCKS{'H'};
@@ -147,6 +157,42 @@ bool CCoinsViewDB::GetNamesForHeight(unsigned nHeight, std::set<valtype>& names)
         const valtype& name = entry.name;
         if (names.count(name) > 0) {
             LogError ("%s : duplicate name %s in expire index",
+                      __func__, EncodeNameForMessage(name));
+            return false;
+        }
+        names.insert(name);
+    }
+
+    return true;
+}
+
+bool CCoinsViewDB::GetHistoryNamesForHeight(unsigned nHeight, std::set<valtype>& names) const {
+    names.clear();
+
+    /* History-tail index lookup, mirroring GetNamesForHeight but against
+       DB_NAME_HISTORY_EXPIRY.  Unlike that index, this one is
+       append-only per (height, name) pair (one update per name per
+       block), so duplicate detection collapses to "key already in the
+       set", which would indicate DB corruption.  */
+    std::unique_ptr<CDBIterator> pcursor(const_cast<CDBWrapper*>(m_db.get())->NewIterator());
+
+    const CNameCache::ExpireEntry seekEntry(nHeight, valtype ());
+    pcursor->Seek(std::make_pair(DB_NAME_HISTORY_EXPIRY, seekEntry));
+
+    for (; pcursor->Valid(); pcursor->Next())
+    {
+        std::pair<uint8_t, CNameCache::ExpireEntry> key;
+        if (!pcursor->GetKey(key) || key.first != DB_NAME_HISTORY_EXPIRY)
+            break;
+        const CNameCache::ExpireEntry& entry = key.second;
+
+        assert (entry.nHeight >= nHeight);
+        if (entry.nHeight > nHeight)
+          break;
+
+        const valtype& name = entry.name;
+        if (names.count(name) > 0) {
+            LogError ("%s : duplicate name %s in history-expire index",
                       __func__, EncodeNameForMessage(name));
             return false;
         }
@@ -380,6 +426,11 @@ bool CCoinsViewDB::ValidateNameDB(const Chainstate& chainState, const std::funct
     std::set<valtype> namesInDB;
     std::set<valtype> namesInUTXO;
     std::set<valtype> namesWithHistory;
+    /* Per-name set of heights present in DB_NAME_HISTORY values, used
+       to validate the DB_NAME_HISTORY_EXPIRY index.  */
+    std::map<valtype, std::set<unsigned>> historyEntryHeights;
+    /* Per-name set of (height, name) keys in DB_NAME_HISTORY_EXPIRY.  */
+    std::map<valtype, std::set<unsigned>> historyIndexHeights;
 
     for (; pcursor->Valid(); pcursor->Next())
     {
@@ -460,6 +511,16 @@ bool CCoinsViewDB::ValidateNameDB(const Chainstate& chainState, const std::funct
                 return false;
             }
             namesWithHistory.insert(name);
+
+            /* Read the history payload too, so we can cross-check the
+               new DB_NAME_HISTORY_EXPIRY index below.  */
+            CNameHistory hist;
+            if (!pcursor->GetValue(hist)) {
+                LogError ("%s : failed to read DB_NAME_HISTORY value", __func__);
+                return false;
+            }
+            for (const CNameData& entry : hist.getData ())
+                historyEntryHeights[name].insert (entry.getHeight ());
             break;
         }
 
@@ -480,6 +541,28 @@ bool CCoinsViewDB::ValidateNameDB(const Chainstate& chainState, const std::funct
             }
 
             nameHeightsIndex.insert(std::make_pair(name, entry.nHeight));
+            break;
+        }
+
+        case DB_NAME_HISTORY_EXPIRY:
+        {
+            std::pair<uint8_t, CNameCache::ExpireEntry> key;
+            if (!pcursor->GetKey(key)
+                || key.first != DB_NAME_HISTORY_EXPIRY) {
+                LogError ("%s : failed to read DB_NAME_HISTORY_EXPIRY key",
+                          __func__);
+                return false;
+            }
+            const CNameCache::ExpireEntry& entry = key.second;
+            auto [it, inserted]
+              = historyIndexHeights[entry.name].insert (entry.nHeight);
+            if (!inserted) {
+                LogError ("%s : duplicate key in history-expire index"
+                          " for name %s at height %u",
+                          __func__,
+                          EncodeNameForMessage(entry.name), entry.nHeight);
+                return false;
+            }
             break;
         }
 
@@ -518,10 +601,44 @@ bool CCoinsViewDB::ValidateNameDB(const Chainstate& chainState, const std::funct
                           __func__, EncodeNameForMessage(name));
                 return false;
             }
-    } else if (!namesWithHistory.empty ()) {
-        LogError ("%s : name_history entries in DB, but"
-                  " -namehistory not set", __func__);
-        return false;
+
+        /* History-tail index validation.  Every key in the index must
+           reference a real DB_NAME_HISTORY entry at that height (otherwise
+           we have a dangling index entry that would cause the trim driver
+           to visit a name with no matching history row -- harmless but
+           wrong).  We do NOT require the converse (every history entry
+           must be indexed): pre-existing DB_NAME_HISTORY rows from before
+           the history-tail index shipped will not have index entries until
+           a reindex.  -prunenamehistory documents this catch-up gap.  */
+        for (const auto& [name, heights] : historyIndexHeights)
+        {
+            const auto it = historyEntryHeights.find (name);
+            if (it == historyEntryHeights.end ()) {
+                LogError ("%s : history-expire index references name '%s'"
+                          " with no DB_NAME_HISTORY row",
+                          __func__, EncodeNameForMessage(name));
+                return false;
+            }
+            for (const unsigned h : heights)
+                if (it->second.count (h) == 0) {
+                    LogError ("%s : history-expire index references"
+                              " name '%s' at height %u, but no matching"
+                              " history entry exists",
+                              __func__, EncodeNameForMessage(name), h);
+                    return false;
+                }
+        }
+    } else {
+        if (!namesWithHistory.empty ()) {
+            LogError ("%s : name_history entries in DB, but"
+                      " -namehistory not set", __func__);
+            return false;
+        }
+        if (!historyIndexHeights.empty ()) {
+            LogError ("%s : history-expire index entries in DB, but"
+                      " -namehistory not set", __func__);
+            return false;
+        }
     }
 
     LogInfo("Checked name database, %u unexpired names, %u total.\n",
@@ -556,4 +673,12 @@ CNameCache::writeBatch (CDBBatch& batch) const
       batch.Write (std::make_pair (DB_NAME_EXPIRY, i->first));
     else
       batch.Erase (std::make_pair (DB_NAME_EXPIRY, i->first));
+
+  assert (fNameHistory || historyExpireIndex.empty ());
+  for (std::map<ExpireEntry, bool>::const_iterator i = historyExpireIndex.begin ();
+       i != historyExpireIndex.end (); ++i)
+    if (i->second)
+      batch.Write (std::make_pair (DB_NAME_HISTORY_EXPIRY, i->first));
+    else
+      batch.Erase (std::make_pair (DB_NAME_HISTORY_EXPIRY, i->first));
 }

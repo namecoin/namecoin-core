@@ -343,6 +343,15 @@ public:
     // Query for names that were updated at the given height
     virtual bool GetNamesForHeight(unsigned nHeight, std::set<valtype>& names) const = 0;
 
+    // Query for names that have a DB_NAME_HISTORY entry pinned at the
+    // given height.  Unlike GetNamesForHeight (which is indexed by the
+    // name's current live height and overwrites on update), this index
+    // is keyed by the height of the *individual* history entry that was
+    // archived and is therefore stable across renewals.  Returns false
+    // on backends that don't support history (history-tail index is
+    // only populated when -namehistory is enabled).
+    virtual bool GetHistoryNamesForHeight(unsigned nHeight, std::set<valtype>& names) const = 0;
+
     // Get a name iterator.
     virtual CNameIterator* IterateNames() const = 0;
 
@@ -380,6 +389,7 @@ public:
     bool GetName(const valtype& name, CNameData& data) const override { return false; }
     bool GetNameHistory(const valtype& name, CNameHistory& data) const override { return false; }
     bool GetNamesForHeight(unsigned nHeight, std::set<valtype>& names) const override { return false; }
+    bool GetHistoryNamesForHeight(unsigned nHeight, std::set<valtype>& names) const override { return false; }
     CNameIterator* IterateNames() const override { assert(false); }
     void BatchWrite(CoinsViewCacheCursor& cursor, const uint256&, const CNameCache& names) override
     {
@@ -409,6 +419,7 @@ public:
     bool GetName(const valtype& name, CNameData& data) const override { return base->GetName(name, data); }
     bool GetNameHistory(const valtype& name, CNameHistory& data) const override { return base->GetNameHistory(name, data); }
     bool GetNamesForHeight(unsigned nHeight, std::set<valtype>& names) const override { return base->GetNamesForHeight(nHeight, names); }
+    bool GetHistoryNamesForHeight(unsigned nHeight, std::set<valtype>& names) const override { return base->GetHistoryNamesForHeight(nHeight, names); }
     CNameIterator* IterateNames() const override { return base->IterateNames(); }
     void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& block_hash, const CNameCache& names) override { return base->BatchWrite(cursor, block_hash, names); }
     std::unique_ptr<CCoinsViewCursor> Cursor() const override { return base->Cursor(); }
@@ -469,6 +480,7 @@ public:
     bool GetName(const valtype& name, CNameData& data) const override;
     bool GetNameHistory(const valtype& name, CNameHistory& data) const override;
     bool GetNamesForHeight(unsigned nHeight, std::set<valtype>& names) const override;
+    bool GetHistoryNamesForHeight(unsigned nHeight, std::set<valtype>& names) const override;
     CNameIterator* IterateNames() const override;
     void BatchWrite(CoinsViewCacheCursor& cursor, const uint256& hashBlock, const CNameCache& names) override;
     std::unique_ptr<CCoinsViewCursor> Cursor() const override {
@@ -478,6 +490,47 @@ public:
     /* Changes to the name database.  */
     void SetName(const valtype &name, const CNameData &data, bool undo);
     void DeleteName(const valtype &name);
+
+    /**
+     * Drop DB_NAME_HISTORY entries that are older than the grace
+     * window, applied uniformly to live, expired, and renewed names.
+     * For each affected name the history vector is rewritten with all
+     * entries whose own update height is <= targetHeight removed; the
+     * later entries (if any) are kept.  If the resulting vector is
+     * empty, the row is erased.  The current live DB_NAME row is never
+     * touched.
+     *
+     * This is a node-local optimisation and has no consensus impact; it
+     * does not touch DB_NAME or the UTXO set.  Pruning is irreversible
+     * across reorgs:  if the trim block is later disconnected, the
+     * dropped history is permanently lost on this node.  The undo path
+     * in SetName tolerates an empty history stack to accommodate this.
+     *
+     * Candidates are bounded by the dedicated history-tail index at
+     * targetHeight = nHeight - expirationDepth - pruneDepth.  That
+     * index records *every* archived history entry by its own write
+     * height (unlike the expire index, which only tracks each name's
+     * current live height and is overwritten on renewal), so the trim
+     * driver visits a name at the right moment for each individual
+     * history entry regardless of whether the name has since been
+     * renewed.  Per-block cost is bounded by the number of names that
+     * had a history entry written at exactly targetHeight, the same
+     * shape as ExpireNames.
+     *
+     * The index is only populated for history entries written by code
+     * that includes this PR; pre-existing DB_NAME_HISTORY rows from
+     * before the feature shipped will not be visited by the trim
+     * driver and remain on disk until the name is updated again (which
+     * archives a new entry, registers it in the index, and lets the
+     * normal flow take over) or the user reindexes.
+     *
+     * @param nHeight           The current block height (after ExpireNames).
+     * @param expirationDepth   Consensus expiration depth at nHeight.
+     * @param pruneDepth        Grace period in blocks past expiration
+     *                          before history is dropped.
+     */
+    void PruneExpiredHistory(unsigned nHeight, unsigned expirationDepth,
+                             unsigned pruneDepth);
 
     /**
      * Check if we have the given utxo already loaded in this cache.

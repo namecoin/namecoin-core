@@ -2695,6 +2695,21 @@ bool Chainstate::ConnectBlock(const CBlock& block, BlockValidationState& state, 
         return false;
     }
 
+    /* Optionally trim name_history entries that are older than the
+       grace window, applied uniformly to live, expired, and renewed
+       names.  This is a node-local optimisation; see the
+       -prunenamehistory option.  Pruning is irreversible across reorgs,
+       so it is gated on an explicit opt-in.  PruneExpiredHistory
+       itself no-ops when fNameHistory is false or nPruneNameHistory
+       is 0, so we don't repeat those checks here.  */
+    {
+        const unsigned expireHeight = pindex->nHeight + 1;
+        const unsigned expirationDepth
+          = params.GetConsensus ().rules->NameExpirationDepth (expireHeight);
+        view.PruneExpiredHistory (expireHeight, expirationDepth,
+                                  nPruneNameHistory);
+    }
+
     if (!m_blockman.WriteBlockUndo(blockundo, state, *pindex)) {
         return false;
     }

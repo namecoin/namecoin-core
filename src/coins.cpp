@@ -219,6 +219,14 @@ bool CCoinsViewCache::GetNamesForHeight(unsigned nHeight, std::set<valtype>& nam
     return true;
 }
 
+bool CCoinsViewCache::GetHistoryNamesForHeight(unsigned nHeight, std::set<valtype>& names) const {
+    if (!base->GetHistoryNamesForHeight(nHeight, names))
+        return false;
+
+    cacheNames.updateHistoryNamesForHeight(nHeight, names);
+    return true;
+}
+
 CNameIterator* CCoinsViewCache::IterateNames() const {
     return cacheNames.iterateNames(base->IterateNames());
 }
@@ -250,9 +258,32 @@ void CCoinsViewCache::SetName(const valtype &name, const CNameData& data, bool u
             }
 
             if (undo)
-                history.pop(data);
+            {
+                /* Normally we expect history to be non-empty and its top
+                   to match `data`.  However, with -prunenamehistory the
+                   stack may have been dropped earlier; in that case the
+                   undo is intentionally lossy and we just leave the
+                   history empty.  */
+                if (!history.empty ())
+                {
+                    history.pop(data);
+                    /* Mirror the history-tail index: the previously
+                       pushed entry for `data.getHeight()` is being
+                       reversed.  Erasing a key that isn't in the index
+                       (e.g. because pruning already dropped it) is a
+                       harmless no-op at the DB layer.  */
+                    cacheNames.removeHistoryExpireIndex(name,
+                                                        data.getHeight());
+                }
+            }
             else
+            {
                 history.push(oldData);
+                /* Record the archived entry in the history-tail expire
+                   index so PruneExpiredHistory can find it again at
+                   targetHeight = oldData.getHeight().  */
+                cacheNames.addHistoryExpireIndex(name, oldData.getHeight());
+            }
 
             cacheNames.setHistory(name, history);
         }
@@ -278,6 +309,81 @@ void CCoinsViewCache::DeleteName(const valtype &name) {
     }
 
     cacheNames.remove(name);
+}
+
+void CCoinsViewCache::PruneExpiredHistory(unsigned nHeight,
+                                          unsigned expirationDepth,
+                                          unsigned pruneDepth)
+{
+    /* This is a node-local optimisation.  It must never run when name
+       history is disabled (the cache invariants assume that history is
+       only ever touched under fNameHistory), and it is a no-op when
+       pruning is disabled by configuration.  */
+    if (!fNameHistory || pruneDepth == 0)
+        return;
+
+    /* The cut-off is the highest update height whose history rows are
+       eligible to be dropped at this block: anything <= targetHeight
+       is older than expirationDepth + pruneDepth blocks.  Skip if that
+       height would be negative (chain too short).  */
+    if (nHeight < expirationDepth + pruneDepth)
+        return;
+    const unsigned targetHeight = nHeight - expirationDepth - pruneDepth;
+
+    /* Use the dedicated history-tail expire index as a bounded driver:
+       it lists exactly the names that have a DB_NAME_HISTORY entry
+       pinned at targetHeight (regardless of the name's current live
+       height).  Unlike the live-row expire index, this one is not
+       overwritten when a name is renewed, so names with many
+       accumulated history entries are visited at exactly the right
+       moment for each entry.  Per-block work is bounded by the
+       cardinality of the index at targetHeight, which has the same
+       shape as ExpireNames.  */
+    std::set<valtype> candidates;
+    if (!GetHistoryNamesForHeight (targetHeight, candidates))
+        return;
+
+    for (const valtype& name : candidates)
+    {
+        CNameHistory history;
+        if (!GetNameHistory (name, history))
+        {
+            /* The history-tail index pointed at a name with no history
+               row.  Should not happen for well-formed databases (the
+               PR's name_checkdb extension enforces this), but tolerate
+               it defensively: still erase the dangling index key so
+               the trim driver doesn't keep tripping over it.  */
+            cacheNames.removeHistoryExpireIndex (name, targetHeight);
+            continue;
+        }
+        if (history.empty ())
+        {
+            cacheNames.removeHistoryExpireIndex (name, targetHeight);
+            continue;
+        }
+
+        const size_t before = history.getData ().size ();
+        const size_t removed = history.trimBelowOrEqual (targetHeight);
+
+        /* Erase the index key for targetHeight regardless of whether
+           any entry was trimmed.  If `removed == 0`, then either the
+           index is out of sync with the history row (e.g. a future
+           manual repair) or, much more commonly, every entry that was
+           ever pinned at targetHeight has already been removed by a
+           prior trim pass (e.g. the cache layered a remove on top of
+           an add).  Either way the on-disk key has no business
+           surviving past this visit.  */
+        cacheNames.removeHistoryExpireIndex (name, targetHeight);
+
+        if (removed == 0)
+            continue;
+
+        /* An empty result is folded to a DB_NAME_HISTORY erase by
+           writeBatch in CCoinsViewDB, exactly like SetName's existing
+           path.  */
+        assert (removed <= before);
+        cacheNames.setHistory (name, history);
+    }
 }
 
 void CCoinsViewCache::BatchWrite(CoinsViewCacheCursor& cursor, const uint256& in_block_hash, const CNameCache& names)

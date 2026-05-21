@@ -934,6 +934,292 @@ BOOST_AUTO_TEST_CASE (name_expire_utxo)
 
 /* ************************************************************************** */
 
+BOOST_AUTO_TEST_CASE (name_prune_expired_history)
+{
+  /* Exercise CCoinsViewCache::PruneExpiredHistory in isolation.
+
+     The pruning routine drives its candidate set off the history-tail
+     expire index, which is keyed by the height of each *archived*
+     CNameData (the previous live height at the moment of an update),
+     not by the name's current live height.  The trim drops history
+     entries with their own nHeight <= targetHeight and leaves the
+     live DB_NAME row alone.  */
+
+  fNameHistory = true;
+
+  const valtype nameRipe
+    = DecodeName ("prune-test-ripe", NameEncoding::ASCII);
+  const valtype nameNotYet
+    = DecodeName ("prune-test-notyet", NameEncoding::ASCII);
+  const valtype nameRenewed
+    = DecodeName ("prune-test-renewed", NameEncoding::ASCII);
+  const valtype value1 = DecodeName ("v1", NameEncoding::ASCII);
+  const valtype value2 = DecodeName ("v2", NameEncoding::ASCII);
+  const valtype value3 = DecodeName ("v3", NameEncoding::ASCII);
+  const CScript addr = getTestAddress ();
+
+  /* Use a backing CCoinsViewDB to exercise the real read paths.  */
+  LOCK (cs_main);
+  CCoinsViewCache view(&m_node.chainman->ActiveChainstate ().CoinsTip ());
+
+  CBlockUndo undo;
+
+  /* Use the mainnet expirationDepth of 12000 for heights <= 24000.
+     With pruneDepth = 100, the trim cut-off at nHeight = 14000 is
+     targetHeight = 14000 - 12000 - 100 = 1900.  */
+  const unsigned expDepth = 12000;
+  const unsigned pruneDepth = 100;
+  const unsigned nHeight = 14000;
+  const unsigned targetHeight = nHeight - expDepth - pruneDepth;
+
+  /* nameRipe: firstupdate at 1850, then a single update at 1900.
+     History-tail index for this name: {1850} (the firstupdate's entry
+     was archived when the 1900 update happened).  Live row: 1900.  */
+  CMutableTransaction mtx;
+  mtx.SetNamecoin ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameFirstupdate (
+                                  addr, nameRipe, value1, valtype (20, 'r'))));
+  ApplyNameTransaction (CTransaction (mtx), 1850, view, undo);
+  mtx.vout.clear ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameUpdate (
+                                  addr, nameRipe, value2)));
+  ApplyNameTransaction (CTransaction (mtx), 1900, view, undo);
+
+  /* nameNotYet: firstupdate at 1851 then update at 1901, so its sole
+     archived entry sits at 1851 -- one block above targetHeight.  */
+  mtx.vout.clear ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameFirstupdate (
+                                  addr, nameNotYet, value1, valtype (20, 'n'))));
+  ApplyNameTransaction (CTransaction (mtx), 1851, view, undo);
+  mtx.vout.clear ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameUpdate (
+                                  addr, nameNotYet, value2)));
+  ApplyNameTransaction (CTransaction (mtx), 1901, view, undo);
+
+  /* nameRenewed: firstupdate at 1850, update at 1900, second update
+     at targetHeight + 50.  Archived entries: {1850, 1900}.  This is
+     the case the previous PR mis-handled -- the expire-index driver
+     could only see the latest live height, so the 1850 and 1900
+     archives were invisible until 1950 itself aged out.  With the
+     history-tail index they are visible at targetHeight=1850 and
+     targetHeight=1900 respectively.  */
+  mtx.vout.clear ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameFirstupdate (
+                                  addr, nameRenewed, value1, valtype (20, 'w'))));
+  ApplyNameTransaction (CTransaction (mtx), 1850, view, undo);
+  mtx.vout.clear ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameUpdate (
+                                  addr, nameRenewed, value2)));
+  ApplyNameTransaction (CTransaction (mtx), 1900, view, undo);
+  mtx.vout.clear ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameUpdate (
+                                  addr, nameRenewed, value3)));
+  ApplyNameTransaction (CTransaction (mtx), targetHeight + 50, view, undo);
+
+  /* Sanity: pre-trim history sizes.  */
+  CNameHistory hist;
+  BOOST_CHECK (view.GetNameHistory (nameRipe, hist));
+  BOOST_CHECK_EQUAL (hist.getData ().size (), 1u);
+  BOOST_CHECK (view.GetNameHistory (nameNotYet, hist));
+  BOOST_CHECK_EQUAL (hist.getData ().size (), 1u);
+  BOOST_CHECK (view.GetNameHistory (nameRenewed, hist));
+  BOOST_CHECK_EQUAL (hist.getData ().size (), 2u);
+
+  /* Sanity: the history-tail index is populated as expected.
+     targetHeight = 1900 -- nameRipe (entry archived 1850 then updated
+     at 1900 archived again) wait -- recheck: the 1900 update of
+     nameRipe archived oldData with getHeight()=1850, so the index
+     entry is at 1850, not 1900.  Same for nameRenewed's first update.
+     For nameRenewed's second update (at targetHeight+50) the archived
+     entry was the 1900 row, so an index entry sits at 1900.  */
+  std::set<valtype> idxAt1850;
+  BOOST_CHECK (view.GetHistoryNamesForHeight (1850, idxAt1850));
+  BOOST_CHECK_EQUAL (idxAt1850.size (), 2u);
+  BOOST_CHECK (idxAt1850.count (nameRipe) == 1);
+  BOOST_CHECK (idxAt1850.count (nameRenewed) == 1);
+  std::set<valtype> idxAt1851;
+  BOOST_CHECK (view.GetHistoryNamesForHeight (1851, idxAt1851));
+  BOOST_CHECK_EQUAL (idxAt1851.size (), 1u);
+  BOOST_CHECK (idxAt1851.count (nameNotYet) == 1);
+  std::set<valtype> idxAt1900;
+  BOOST_CHECK (view.GetHistoryNamesForHeight (1900, idxAt1900));
+  BOOST_CHECK_EQUAL (idxAt1900.size (), 1u);
+  BOOST_CHECK (idxAt1900.count (nameRenewed) == 1);
+
+  /* pruneDepth = 0 must be an inert no-op.  */
+  view.PruneExpiredHistory (nHeight, expDepth, 0);
+  BOOST_CHECK (view.GetNameHistory (nameRipe, hist)
+               && hist.getData ().size () == 1u);
+  BOOST_CHECK (view.GetNameHistory (nameNotYet, hist)
+               && hist.getData ().size () == 1u);
+  BOOST_CHECK (view.GetNameHistory (nameRenewed, hist)
+               && hist.getData ().size () == 2u);
+
+  /* fNameHistory = false must short-circuit.  */
+  fNameHistory = false;
+  view.PruneExpiredHistory (nHeight, expDepth, pruneDepth);
+  fNameHistory = true;
+  BOOST_CHECK (view.GetNameHistory (nameRipe, hist)
+               && hist.getData ().size () == 1u);
+
+  /* Now run the trim at the block whose targetHeight is 1850.  That
+     is nHeight = 1850 + expDepth + pruneDepth = 13950.  Candidates
+     come from GetHistoryNamesForHeight(1850) = {nameRipe, nameRenewed}.
+
+       - nameRipe   : has one archived entry at 1850.  Drops -> empty
+                      -> DB_NAME_HISTORY row erased.  Live row at 1900
+                      untouched.
+       - nameRenewed: has archived entries at 1850 and 1900.  The
+                      entry at 1850 is <= cutoff so it drops; the
+                      entry at 1900 is > cutoff so it stays.
+     nameNotYet is NOT a candidate this block (its only archived entry
+     is at 1851).  */
+  view.PruneExpiredHistory (1850 + expDepth + pruneDepth, expDepth,
+                            pruneDepth);
+
+  hist = CNameHistory ();
+  BOOST_CHECK (view.GetNameHistory (nameRipe, hist));
+  BOOST_CHECK (hist.empty ());
+  CNameData liveRipe;
+  BOOST_CHECK (view.GetName (nameRipe, liveRipe));
+  BOOST_CHECK (liveRipe.getValue () == value2);
+  BOOST_CHECK_EQUAL (liveRipe.getHeight (), 1900u);
+
+  hist = CNameHistory ();
+  BOOST_CHECK (view.GetNameHistory (nameNotYet, hist));
+  BOOST_CHECK_EQUAL (hist.getData ().size (), 1u);
+
+  hist = CNameHistory ();
+  BOOST_CHECK (view.GetNameHistory (nameRenewed, hist));
+  BOOST_CHECK_EQUAL (hist.getData ().size (), 1u);
+  BOOST_CHECK_EQUAL (hist.getData ().front ().getHeight (), 1900u);
+
+  /* The trim must also erase the index keys it consumed: re-querying
+     for the same targetHeight should yield nothing.  This is the
+     property that lets the trim driver remain a single-pass scan
+     instead of having to keep state about which names it has already
+     visited.  */
+  std::set<valtype> idxAfter;
+  BOOST_CHECK (view.GetHistoryNamesForHeight (1850, idxAfter));
+  BOOST_CHECK (idxAfter.empty ());
+
+  /* One block later, nameNotYet's index entry at 1851 is in scope.  */
+  view.PruneExpiredHistory (1851 + expDepth + pruneDepth, expDepth,
+                            pruneDepth);
+  hist = CNameHistory ();
+  BOOST_CHECK (view.GetNameHistory (nameNotYet, hist));
+  BOOST_CHECK (hist.empty ());
+
+  /* Advance to targetHeight = 1900: nameRenewed's surviving tail entry
+     at 1900 finally drops.  Crucially this works even though
+     nameRenewed's *live* row is at targetHeight+50 -- the live-row
+     expire index would never have visited the name at 1900, but the
+     history-tail index does.  */
+  view.PruneExpiredHistory (1900 + expDepth + pruneDepth, expDepth,
+                            pruneDepth);
+  hist = CNameHistory ();
+  BOOST_CHECK (view.GetNameHistory (nameRenewed, hist));
+  BOOST_CHECK (hist.empty ());
+  CNameData liveRenewed;
+  BOOST_CHECK (view.GetName (nameRenewed, liveRenewed));
+  BOOST_CHECK (liveRenewed.getValue () == value3);
+  BOOST_CHECK_EQUAL (liveRenewed.getHeight (), targetHeight + 50);
+
+  /* The "keep a non-empty tail" path, end-to-end through the driver:
+     stage a name with three entries straddling the cut-off so that
+     one survives.  We pick heights so that at the trim block, only
+     the lowest two archived entries are ripe.  */
+  const valtype nameSplit
+    = DecodeName ("prune-test-split", NameEncoding::ASCII);
+  const unsigned heightB = 5000;
+  mtx.vout.clear ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameFirstupdate (
+                                  addr, nameSplit, value1, valtype (20, 's'))));
+  ApplyNameTransaction (CTransaction (mtx), heightB, view, undo);
+  mtx.vout.clear ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameUpdate (
+                                  addr, nameSplit, value2)));
+  ApplyNameTransaction (CTransaction (mtx), heightB + 200, view, undo);
+  mtx.vout.clear ();
+  mtx.vout.push_back (CTxOut (COIN,
+                              CNameScript::buildNameUpdate (
+                                  addr, nameSplit, value3)));
+  ApplyNameTransaction (CTransaction (mtx), heightB + 400, view, undo);
+  /* Index entries for nameSplit live at {heightB, heightB+200}; the
+     entry at heightB+400 is the live row.  */
+
+  BOOST_CHECK (view.GetNameHistory (nameSplit, hist));
+  BOOST_CHECK_EQUAL (hist.getData ().size (), 2u);
+
+  /* Trim at nHeight = heightB + expDepth + pruneDepth so the cut-off
+     is exactly heightB.  Only the entry at heightB drops; the entry
+     at heightB+200 survives.  */
+  view.PruneExpiredHistory (heightB + expDepth + pruneDepth, expDepth,
+                            pruneDepth);
+  hist = CNameHistory ();
+  BOOST_CHECK (view.GetNameHistory (nameSplit, hist));
+  BOOST_CHECK_EQUAL (hist.getData ().size (), 1u);
+  BOOST_CHECK_EQUAL (hist.getData ().front ().getHeight (), heightB + 200);
+  CNameData liveSplit;
+  BOOST_CHECK (view.GetName (nameSplit, liveSplit));
+  BOOST_CHECK (liveSplit.getValue () == value3);
+  BOOST_CHECK_EQUAL (liveSplit.getHeight (), heightB + 400);
+
+  /* And the consumed index key is gone.  */
+  std::set<valtype> idxAtB;
+  BOOST_CHECK (view.GetHistoryNamesForHeight (heightB, idxAtB));
+  BOOST_CHECK (idxAtB.empty ());
+  /* But the surviving index key for the kept entry is still there.  */
+  std::set<valtype> idxAtB200;
+  BOOST_CHECK (view.GetHistoryNamesForHeight (heightB + 200, idxAtB200));
+  BOOST_CHECK_EQUAL (idxAtB200.size (), 1u);
+  BOOST_CHECK (idxAtB200.count (nameSplit) == 1);
+
+  /* trimBelowOrEqual unit-level sanity: exercise the helper directly
+     to cover the "drop none", "drop prefix", and "drop all" cases.
+     This is independent of the driver and stays useful as a
+     regression guard on the CNameHistory primitive itself.  */
+  CNameHistory mixed;
+  CNameData d;
+  d.fromScript (1000, COutPoint (), CNameScript (
+      CNameScript::buildNameUpdate (addr, nameSplit, value1)));
+  mixed.push (d);
+  d.fromScript (2000, COutPoint (), CNameScript (
+      CNameScript::buildNameUpdate (addr, nameSplit, value2)));
+  mixed.push (d);
+  d.fromScript (3000, COutPoint (), CNameScript (
+      CNameScript::buildNameUpdate (addr, nameSplit, value3)));
+  mixed.push (d);
+  BOOST_CHECK_EQUAL (mixed.getData ().size (), 3u);
+
+  BOOST_CHECK_EQUAL (mixed.trimBelowOrEqual (500), 0u);
+  BOOST_CHECK_EQUAL (mixed.getData ().size (), 3u);
+  BOOST_CHECK_EQUAL (mixed.trimBelowOrEqual (1500), 1u);
+  BOOST_CHECK_EQUAL (mixed.getData ().size (), 2u);
+  BOOST_CHECK_EQUAL (mixed.getData ().front ().getHeight (), 2000u);
+  BOOST_CHECK_EQUAL (mixed.trimBelowOrEqual (2000), 1u);
+  BOOST_CHECK_EQUAL (mixed.getData ().size (), 1u);
+  BOOST_CHECK_EQUAL (mixed.getData ().front ().getHeight (), 3000u);
+  BOOST_CHECK_EQUAL (mixed.trimBelowOrEqual (10000), 1u);
+  BOOST_CHECK (mixed.empty ());
+
+  /* nHeight too small to host any candidates -> no-op (no underflow).  */
+  view.PruneExpiredHistory (1, expDepth, pruneDepth);
+
+  fNameHistory = false;
+}
+
+/* ************************************************************************** */
+
 BOOST_AUTO_TEST_CASE (encoding_to_from_string)
 {
   for (const std::string& encStr : {"ascii", "utf8", "hex"})
