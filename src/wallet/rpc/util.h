@@ -39,6 +39,16 @@ static const RPCResult RESULT_LAST_PROCESSED_BLOCK { RPCResult::Type::OBJ, "last
  * @return nullptr if no wallet should be used, or a pointer to the CWallet
  */
 std::shared_ptr<CWallet> GetWalletForJSONRPCRequest(const JSONRPCRequest& request);
+
+/** Like GetWalletForJSONRPCRequest, but returns a null shared_ptr instead of
+ *  throwing when no wallet context is attached, no wallet is loaded, or the
+ *  selection is ambiguous.  Use this for optional wallet annotations on
+ *  otherwise wallet-agnostic RPCs (e.g. the "ismine" field).  Resolving the
+ *  wallet context inside the wallet translation unit avoids the typeid
+ *  duplication that can occur when std::any_cast<WalletContext*> is invoked
+ *  from a different static archive (e.g. the node library) on platforms with
+ *  hidden-default RTTI visibility (notably macOS).  */
+std::shared_ptr<CWallet> MaybeGetWalletForJSONRPCRequest(const JSONRPCRequest& request);
 std::optional<std::string> GetWalletNameFromJSONRPCRequest(const JSONRPCRequest& request);
 /**
  * Ensures that a wallet name is specified across the endpoint and wallet_name.

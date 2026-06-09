@@ -266,28 +266,13 @@ public:
   explicit MaybeWalletForRequest (const JSONRPCRequest& request)
   {
 #ifdef ENABLE_WALLET
-    try
-      {
-        /* GetWalletForJSONRPCRequest throws an internal error if there
-           is no wallet context.  We want to handle this situation gracefully
-           and just fall back to not having a wallet in this case.  */
-        if (util::AnyPtr<wallet::WalletContext> (request.context))
-          {
-            wallet = wallet::GetWalletForJSONRPCRequest (request);
-            return;
-          }
-      }
-    catch (const UniValue& exc)
-      {
-        const auto& code = exc["code"];
-        if (!code.isNum () || code.getInt<int> () != RPC_WALLET_NOT_SPECIFIED)
-          throw;
-
-      }
-
-    /* If the wallet is not set, that's fine, and we just indicate it to
-       other code (by having a null wallet).  */
-    wallet = nullptr;
+    /* Resolve the wallet via a wallet-side helper so the WalletContext
+       typeid lookup happens in the wallet translation unit.  Calling
+       util::AnyPtr<WalletContext> from this node-side TU yields a false
+       negative on platforms where typeinfo for wallet::WalletContext is
+       duplicated across the static node and wallet libraries (notably
+       macOS clang).  */
+    wallet = wallet::MaybeGetWalletForJSONRPCRequest (request);
 #endif
   }
 
@@ -804,7 +789,9 @@ name_pending ()
   NameOptionsHelp optHelp;
   optHelp
       .withNameEncoding ()
-      .withValueEncoding ();
+      .withValueEncoding ()
+      .withArg ("mineOnly", RPCArg::Type::BOOL, "false",
+                "Only return entries for names owned by the loaded wallet");
 
   return RPCMethod ("name_pending",
       "Lists unconfirmed name operations in the mempool.\n"
@@ -823,6 +810,7 @@ name_pending ()
       RPCExamples {
           HelpExampleCli ("name_pending", "")
         + HelpExampleCli ("name_pending", "\"d/domob\"")
+        + HelpExampleCli ("name_pending", "null '{\"mineOnly\":true}'")
         + HelpExampleRpc ("name_pending", "")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
@@ -840,6 +828,20 @@ name_pending ()
   if (hasNameFilter)
     nameFilter = DecodeNameFromRPCOrThrow (request.params[0], options);
 
+  bool mineOnly = false;
+  if (options.exists ("mineOnly"))
+    mineOnly = options["mineOnly"].get_bool ();
+#ifdef ENABLE_WALLET
+  const wallet::CWallet* const pwalletForMine = mineOnly ? wallet.getWallet () : nullptr;
+  if (mineOnly && pwalletForMine == nullptr)
+    throw JSONRPCError (RPC_WALLET_NOT_FOUND,
+                        "mineOnly requires a wallet to be loaded");
+#else
+  if (mineOnly)
+    throw JSONRPCError (RPC_METHOD_NOT_FOUND,
+                        "mineOnly requires wallet support, which is disabled");
+#endif
+
   UniValue arr(UniValue::VARR);
   for (const CTxMemPoolEntry& entry : mempool.entryAll ())
     {
@@ -855,6 +857,10 @@ name_pending ()
             continue;
           if (hasNameFilter && op.getOpName () != nameFilter)
             continue;
+#ifdef ENABLE_WALLET
+          if (mineOnly && !pwalletForMine->IsMine (op.getAddress ()))
+            continue;
+#endif
 
           UniValue obj = getNameInfo (options,
                                       op.getOpName (), op.getOpValue (),
