@@ -187,7 +187,12 @@ name_list ()
   NameOptionsHelp optHelp;
   optHelp
       .withNameEncoding ()
-      .withValueEncoding ();
+      .withValueEncoding ()
+      .withArg ("includePending", RPCArg::Type::BOOL, "false",
+                "Also include unconfirmed wallet name operations from the mempool. "
+                "Pending entries replace the confirmed entry for the same name and "
+                "have a \"pending\" field set to true and an \"op\" field describing "
+                "the unconfirmed operation");
 
   return RPCMethod ("name_list",
       "Shows the status of all names in the wallet.\n",
@@ -198,13 +203,26 @@ name_list ()
       RPCResult {RPCResult::Type::ARR, "", "",
           {
               NameInfoHelp ()
-                .withExpiration ()
+                .withField ({RPCResult::Type::NUM, "height", true,
+                             "the name's last update height (omitted for pending entries)"})
+                .withField ({RPCResult::Type::NUM, "expires_in", true,
+                             "expire counter for the name (omitted for pending entries)"})
+                .withField ({RPCResult::Type::BOOL, "expired", true,
+                             "whether the name is expired (omitted for pending entries)"})
+                .withField ({RPCResult::Type::BOOL, "pending", true,
+                             "true if this entry comes from the mempool (only "
+                             "present when includePending is set)"})
+                .withField ({RPCResult::Type::STR, "op", true,
+                             "the pending operation (only present when this "
+                             "entry is pending): \"name_firstupdate\" or "
+                             "\"name_update\""})
                 .finish ()
           }
       },
       RPCExamples {
           HelpExampleCli ("name_list", "")
         + HelpExampleCli ("name_list", "\"myname\"")
+        + HelpExampleCli ("name_list", "null '{\"includePending\":true}'")
         + HelpExampleRpc ("name_list", "")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
@@ -224,8 +242,16 @@ name_list ()
   if (request.params.size () >= 1 && !request.params[0].isNull ())
     nameFilter = DecodeNameFromRPCOrThrow (request.params[0], options);
 
+  bool includePending = false;
+  if (options.exists ("includePending"))
+    includePending = options["includePending"].get_bool ();
+
   std::map<valtype, int> mapHeights;
   std::map<valtype, UniValue> mapObjects;
+  /* Names with a pending wallet name op.  Pending entries always win
+     over any confirmed entry for the same name, since the wallet's
+     intent is the more recent state.  */
+  std::set<valtype> pendingNames;
 
   /* Make sure the results are valid at least up to the most recent block
      the user could have gotten from another RPC command prior to now.  */
@@ -266,10 +292,44 @@ name_list ()
         continue;
 
       const int depth = pwallet->GetTxDepthInMainChain(tx);
-      if (depth <= 0)
-        continue;
-      const int height = tipHeight - depth + 1;
+      const bool isPending = (depth <= 0);
 
+      if (isPending && (!includePending || tx.isAbandoned ()))
+        continue;
+
+      if (isPending)
+        {
+          /* Among multiple pending wallet txs for the same name, prefer
+             the one we saw most recently (highest nOrderPos).  */
+          if (pendingNames.count (name) > 0)
+            {
+              const auto mit = mapHeights.find (name);
+              if (mit != mapHeights.end () && mit->second >= tx.nOrderPos)
+                continue;
+            }
+
+          UniValue obj
+            = getNameInfo (options, name, nameOp.getOpValue (),
+                           COutPoint (tx.GetHash (), nOut),
+                           nameOp.getAddress ());
+          addOwnershipInfo (nameOp.getAddress (), pwallet, obj);
+          obj.pushKV ("pending", true);
+          obj.pushKV ("op",
+                      nameOp.getNameOp () == OP_NAME_FIRSTUPDATE
+                          ? "name_firstupdate"
+                          : "name_update");
+
+          pendingNames.insert (name);
+          mapHeights[name] = tx.nOrderPos;
+          mapObjects[name] = obj;
+          continue;
+        }
+
+      /* If a pending wallet op already covers this name, that wins.  */
+      if (pendingNames.count (name) > 0)
+        continue;
+
+      const int height = tipHeight - depth + 1;
       const auto mit = mapHeights.find (name);
       if (mit != mapHeights.end () && mit->second > height)
         continue;
