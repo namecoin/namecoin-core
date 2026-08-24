@@ -16,7 +16,7 @@
 #include <undo.h>
 #include <validation.h>
 
-#include <test/util/common.h>
+#include <test/util/coins.h>
 #include <test/util/setup_common.h>
 
 #include <boost/test/unit_test.hpp>

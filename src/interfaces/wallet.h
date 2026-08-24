@@ -23,6 +23,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -243,7 +244,7 @@ public:
     //! Get minimum fee.
     virtual CAmount getMinimumFee(unsigned int tx_bytes,
         const wallet::CCoinControl& coin_control,
-        int* returned_target,
+        std::optional<int>* returned_target,
         FeeReason* reason) = 0;
 
     //! Get tx confirm target.

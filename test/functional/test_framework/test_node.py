@@ -269,19 +269,23 @@ class TestNode():
         # tx fees hardcoded in some tests are adequate and do not need changes
         # for Namecoin.
         explicit_fees = set ()
-        fee_args = ["-minrelaytxfee", "-mintxfee", "-consolidatefeerate"]
+        fee_defaults = {
+            "-minrelaytxfee": "0.000001",  # 100 sat/kvB
+            "-mintxfee": "0.00001",        # 1000 sat/kvB
+            "-consolidatefeerate": "0.0001",# 10000 sat/kvB
+        }
         for arg in extra_args:
-            for fee_arg in fee_args:
+            for fee_arg in fee_defaults:
                 if arg.startswith (fee_arg):
                     explicit_fees.add (fee_arg)
-        for fee_arg in fee_args:
+        for fee_arg, fee_default in fee_defaults.items():
             if fee_arg in explicit_fees:
                 continue
 
             # There is some extra handling of -wallet arguments at the end
             # of extra_args, so we add ours at the beginning to not mess with
             # the way upstream works.
-            extra_args = ["%s=0.00001" % fee_arg] + extra_args
+            extra_args = ["%s=%s" % (fee_arg, fee_default)] + extra_args
 
         # Add a new stdout and stderr file each time bitcoind is started
         if stderr is None:
@@ -308,6 +312,17 @@ class TestNode():
                 # does not provide. In particular, painting a QGroupBox can make Qt call
                 # addSubview: on an invalid native object (QTBUG-49686).
                 subp_env.setdefault("QT_STYLE_OVERRIDE", "fusion")
+            if platform.system() == "OpenBSD":
+                # The system Qt packages are built with GLib support, so Qt uses
+                # QEventDispatcherGlib, which pushes/pops the GLib thread-default
+                # main context in each thread. On OpenBSD the pop can run during
+                # thread exit after GLib's per-thread context stack has already
+                # been torn down, so shutdown emits messages like
+                #   (process:NNN): GLib-CRITICAL **: g_main_context_pop_thread_default:
+                #   assertion 'stack != NULL' failed
+                # on stderr, which the test framework treats as a failure.
+                # Fall back to Qt's poll-based event dispatcher instead.
+                subp_env.setdefault("QT_NO_GLIB", "1")
             subp_env.setdefault("LC_ALL", "nl_NL.UTF-8") # Set language to try to trigger translation bugs
             if sys.platform.startswith("linux") and "XDG_RUNTIME_DIR" not in subp_env:
                 # Qt prints warnings to stderr when XDG_RUNTIME_DIR is unset or has wrong

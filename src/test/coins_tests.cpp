@@ -6,6 +6,7 @@
 #include <clientversion.h>
 #include <coins.h>
 #include <streams.h>
+#include <test/util/coins.h>
 #include <test/util/common.h>
 #include <test/util/poolresourcetester.h>
 #include <test/util/random.h>
@@ -33,6 +34,7 @@ void UpdateCoins(const CTransaction& tx, CCoinsViewCache& inputs, CTxUndo &txund
 
 namespace
 {
+
 class CCoinsViewTest : public CoinsViewEmpty
 {
     FastRandomContext& m_rng;
@@ -159,7 +161,7 @@ void SimulationTest(CCoinsView* base, bool fake_best_block)
             // former just delegates to the latter and returns the first unspent in a txn.
             const Coin& entry = (m_rng.randrange(500) == 0) ?
                 AccessByTxid(*stack.back(), txid) : stack.back()->AccessCoin(COutPoint(txid, 0));
-            BOOST_CHECK(coin == entry);
+            BOOST_CHECK_EQUAL(coin, entry);
 
             if (test_havecoin_before) {
                 BOOST_CHECK(result_havecoin == !entry.IsSpent());
@@ -213,7 +215,7 @@ void SimulationTest(CCoinsView* base, bool fake_best_block)
                 bool have = stack.back()->HaveCoin(entry.first);
                 const Coin& coin = stack.back()->AccessCoin(entry.first);
                 BOOST_CHECK(have == !coin.IsSpent());
-                BOOST_CHECK(coin == entry.second);
+                BOOST_CHECK_EQUAL(coin, entry.second);
                 if (coin.IsSpent()) {
                     missed_an_entry = true;
                 } else {
@@ -472,7 +474,7 @@ BOOST_FIXTURE_TEST_CASE(updatecoins_simulation_test, UpdateTest)
                 bool have = stack.back()->HaveCoin(entry.first);
                 const Coin& coin = stack.back()->AccessCoin(entry.first);
                 BOOST_CHECK(have == !coin.IsSpent());
-                BOOST_CHECK(coin == entry.second);
+                BOOST_CHECK_EQUAL(coin, entry.second);
             }
         }
 
@@ -541,24 +543,14 @@ BOOST_AUTO_TEST_CASE(ccoins_serialization)
     BOOST_CHECK_EQUAL(cc3.out.scriptPubKey.size(), 0U);
 
     // scriptPubKey that ends beyond the end of the stream
-    try {
-        Coin cc4;
-        SpanReader{"000007"_hex} >> cc4;
-        BOOST_CHECK_MESSAGE(false, "We should have thrown");
-    } catch (const std::ios_base::failure&) {
-    }
+    BOOST_CHECK_EXCEPTION(SpanReader{"000007"_hex} >> Coin{}, std::ios_base::failure, HasReason{"end of data"});
 
     // Very large scriptPubKey (3*10^9 bytes) past the end of the stream
     DataStream tmp{};
     uint64_t x = 3000000000ULL;
     tmp << VARINT(x);
     BOOST_CHECK_EQUAL(HexStr(tmp), "8a95c0bb00");
-    try {
-        Coin cc5;
-        SpanReader{"00008a95c0bb00"_hex} >> cc5;
-        BOOST_CHECK_MESSAGE(false, "We should have thrown");
-    } catch (const std::ios_base::failure&) {
-    }
+    BOOST_CHECK_EXCEPTION(SpanReader{"00008a95c0bb00"_hex} >> Coin{}, std::ios_base::failure, HasReason{"end of data"});
 }
 
 const static COutPoint OUTPOINT;
@@ -1074,7 +1066,7 @@ BOOST_FIXTURE_TEST_CASE(coins_db_leveldb_layout, FlushTest)
     WITH_LOCK(::cs_main, return base.CompactFullAsync()).wait();
     BOOST_CHECK_EQUAL(level2_files(base), 1);
 
-    BOOST_CHECK(*Assert(base.GetCoin(outpoint)) == coin);
+    BOOST_CHECK_EQUAL(*Assert(base.GetCoin(outpoint)), coin);
     BOOST_CHECK_EQUAL(base.GetBestBlock(), block_hash);
 }
 
@@ -1117,7 +1109,7 @@ BOOST_AUTO_TEST_CASE(ccoins_addcoin_exception_keeps_usage_balanced)
     BOOST_CHECK_THROW(cache.AddCoin(outpoint, Coin{coin2}, /*possible_overwrite=*/false), std::logic_error);
     cache.SelfTest();
 
-    BOOST_CHECK(cache.AccessCoin(outpoint) == coin1);
+    BOOST_CHECK_EQUAL(cache.AccessCoin(outpoint), coin1);
 }
 
 BOOST_AUTO_TEST_CASE(ccoins_emplace_duplicate_keeps_usage_balanced)
@@ -1134,7 +1126,7 @@ BOOST_AUTO_TEST_CASE(ccoins_emplace_duplicate_keeps_usage_balanced)
     cache.EmplaceCoinInternalDANGER(outpoint, Coin{coin2});
     cache.SelfTest();
 
-    BOOST_CHECK(cache.AccessCoin(outpoint) == coin1);
+    BOOST_CHECK_EQUAL(cache.AccessCoin(outpoint), coin1);
 }
 
 BOOST_AUTO_TEST_CASE(ccoins_reset_guard)
@@ -1158,7 +1150,7 @@ BOOST_AUTO_TEST_CASE(ccoins_reset_guard)
 
     {
         const auto reset_guard{cache.CreateResetGuard()};
-        BOOST_CHECK(cache.AccessCoin(outpoint) == coin);
+        BOOST_CHECK_EQUAL(cache.AccessCoin(outpoint), coin);
         BOOST_CHECK(!cache.AccessCoin(outpoint).IsSpent());
         BOOST_CHECK_EQUAL(cache.GetCacheSize(), 1);
         BOOST_CHECK_EQUAL(cache.GetDirtyCount(), 1);
@@ -1205,7 +1197,7 @@ BOOST_AUTO_TEST_CASE(ccoins_peekcoin)
     CCoinsViewCacheTest main_cache{&base};
     const auto fetched{main_cache.PeekCoin(outpoint)};
     BOOST_CHECK(fetched.has_value());
-    BOOST_CHECK(*fetched == coin);
+    BOOST_CHECK_EQUAL(*fetched, coin);
     BOOST_CHECK(!main_cache.HaveCoinInCache(outpoint));
 }
 
