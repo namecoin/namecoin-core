@@ -1236,8 +1236,8 @@ static RPCMethod submitauxblock()
             RPCResult::Type::BOOL, "", "whether the submitted block was correct"
         },
         RPCExamples{
-            HelpExampleCli("submitauxblock", "\"hash\" \"serialised auxpow\"")
-            + HelpExampleRpc("submitauxblock", "\"hash\" \"serialised auxpow\"")
+            HelpExampleCli("submitauxblock", "\"hash\", \"serialised auxpow\"")
+            + HelpExampleRpc("submitauxblock", "\"hash\", \"serialised auxpow\"")
         },
         [&](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
