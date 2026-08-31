@@ -545,13 +545,6 @@ BOOST_FIXTURE_TEST_CASE (auxpow_miner_blockRegeneration, TestChain100Setup)
   AuxpowMinerForTest miner(m_node);
   LOCK (miner.cs);
 
-  /* We use mocktime so that we can control GetTime() as it is used in the
-     logic that determines whether or not to reconstruct a block.  The "base"
-     time is set such that the blocks we have from the fixture are fresh.  */
-  const int64_t baseTime
-      = m_node.chainman->ActiveChain ().Tip ()->GetMedianTimePast () + 1;
-  SetMockTime (baseTime);
-
   /* Construct a first block.  */
   CScript scriptPubKey;
   uint256 target;
@@ -567,7 +560,7 @@ BOOST_FIXTURE_TEST_CASE (auxpow_miner_blockRegeneration, TestChain100Setup)
   /* Calling the method again should return the same, cached block a second
      time (even if we advance the clock, since there are no new
      transactions).  */
-  SetMockTime (baseTime + 100);
+  m_clock += std::chrono::seconds (100);
   const CBlock* pblock = miner.getCurrentBlock (scriptPubKey, target);
   BOOST_CHECK (pblock == pblock1 && pblock->GetHash () == hash1);
 
@@ -590,14 +583,14 @@ BOOST_FIXTURE_TEST_CASE (auxpow_miner_blockRegeneration, TestChain100Setup)
   }
 
   /* We should still get back the cached block, for now.  */
-  SetMockTime (baseTime + 160);
+  m_clock += std::chrono::seconds (60);
   pblock = miner.getCurrentBlock (scriptPubKey, target);
   BOOST_CHECK (pblock == pblock2 && pblock->GetHash () == hash2);
 
   /* With time advanced too far, we get a new block.  This time, we should also
      definitely get a different pointer, as there is no clearing.  The old
      blocks are freed only after a new tip is found.  */
-  SetMockTime (baseTime + 161);
+  m_clock += std::chrono::seconds (1);
   const CBlock* pblock3 = miner.getCurrentBlock (scriptPubKey, target);
   BOOST_CHECK (pblock3 != pblock2 && pblock3->GetHash () != hash2);
 }

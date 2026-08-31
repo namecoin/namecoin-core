@@ -543,7 +543,7 @@ name_firstupdate ()
             RPCResult {RPCResult::Type::STR_HEX, "", "the transaction ID"},
             RPCExamples {
                 HelpExampleCli ("name_firstupdate", "\"myname\", \"555844f2db9c7f4b25da6cb8277596de45021ef2\" \"a77ceb22aa03304b7de64ec43328974aeaca211c37dd29dcce4ae461bb80ca84\", \"my-value\"")
-              + HelpExampleRpc ("name_firstupdate", "\"myname\", \"555844f2db9c7f4b25da6cb8277596de45021ef2\" \"a77ceb22aa03304b7de64ec43328974aeaca211c37dd29dcce4ae461bb80ca84\", \"my-value\"")
+              + HelpExampleRpc ("name_firstupdate", "\"myname\", \"555844f2db9c7f4b25da6cb8277596de45021ef2\", \"a77ceb22aa03304b7de64ec43328974aeaca211c37dd29dcce4ae461bb80ca84\", \"my-value\"")
             },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -853,7 +853,7 @@ queuerawtransaction ()
       RPCResult {RPCResult::Type::STR_HEX, "", "the transaction ID"},
       RPCExamples {
           HelpExampleCli("queuerawtransaction", "txhex") +
-          HelpExampleRpc("queuerawtransaction", "txhex")
+          HelpExampleRpc("queuerawtransaction", "\"txhex\"")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -922,7 +922,7 @@ dequeuetransaction ()
       RPCResult {RPCResult::Type::NONE, "", ""},
       RPCExamples {
           HelpExampleCli("dequeuetransaction", "txid") +
-          HelpExampleRpc("dequeuetransaction", "txid")
+          HelpExampleRpc("dequeuetransaction", "\"txid\"")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {

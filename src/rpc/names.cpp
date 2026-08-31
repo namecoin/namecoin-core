@@ -1021,7 +1021,7 @@ namerawtransaction ()
           HelpExampleCli ("namerawtransaction", R"("raw tx hex" 1 "{\"op\":\"name_new\",\"name\":\"my-name\")")
         + HelpExampleCli ("namerawtransaction", R"("raw tx hex" 1 "{\"op\":\"name_firstupdate\",\"name\":\"my-name\",\"value\":\"new value\",\"rand\":\"00112233\")")
         + HelpExampleCli ("namerawtransaction", R"("raw tx hex" 1 "{\"op\":\"name_update\",\"name\":\"my-name\",\"value\":\"new value\")")
-        + HelpExampleRpc ("namerawtransaction", R"("raw tx hex", 1, "{\"op\":\"name_update\",\"name\":\"my-name\",\"value\":\"new value\")")
+        + HelpExampleRpc ("namerawtransaction", R"("raw tx hex", 1, {"op":"name_update","name":"my-name","value":"new value"})")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1068,7 +1068,7 @@ namepsbt ()
           HelpExampleCli ("namepsbt", R"("psbt" 1 "{\"op\":\"name_new\",\"name\":\"my-name\")")
         + HelpExampleCli ("namepsbt", R"("psbt" 1 "{\"op\":\"name_firstupdate\",\"name\":\"my-name\",\"value\":\"new value\",\"rand\":\"00112233\")")
         + HelpExampleCli ("namepsbt", R"("psbt" 1 "{\"op\":\"name_update\",\"name\":\"my-name\",\"value\":\"new value\")")
-        + HelpExampleRpc ("namepsbt", R"("psbt", 1, "{\"op\":\"name_update\",\"name\":\"my-name\",\"value\":\"new value\")")
+        + HelpExampleRpc ("namepsbt", R"("psbt", 1, {"op":"name_update","name":"my-name","value":"new value"})")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
