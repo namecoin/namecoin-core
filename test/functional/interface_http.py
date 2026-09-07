@@ -104,6 +104,26 @@ class HTTPBasicsTest (BitcoinTestFramework):
         self.setup_nodes()
         self.node = self.nodes[0]
 
+    def send_bad_and_tolerate_disconnect(self, conn, predicate_fn):
+        '''
+        Tolerate a race condition when sending a malformed request that should result
+        in the server disconnecting the client. The server *should* be sending an error
+        response as well but in some conditions on some platforms (Windows) the python
+        client might encounter the socket error before processing the response.
+        '''
+        with self.node.assert_debug_log([f"HTTPResponse (status code: {http.client.BAD_REQUEST}"]):
+            try:
+                response = predicate_fn()
+                assert_equal(response.status, http.client.BAD_REQUEST)
+                self.log.info(f"Client received expected {http.client.BAD_REQUEST} response before connection was terminated")
+                # Drain server response
+                response.read()
+                conn.set_timeout(2)
+            except NETWORK_ERRORS:
+                self.log.info(f"Client did not receive expected {http.client.BAD_REQUEST} response before connection was terminated")
+        assert conn.sock_closed()
+
+
     def run_test(self):
         # The test framework typically reuses a single persistent HTTP connection
         # for all RPCs to a TestNode. Because we are setting -rpcservertimeout
@@ -114,6 +134,7 @@ class HTTPBasicsTest (BitcoinTestFramework):
         self.node.reuse_http_connections = False
 
         self.check_default_connection()
+        self.check_socket_exclusivity()
         self.check_keepalive_connection()
         self.check_close_connection()
         self.check_excessive_request_size()
@@ -133,6 +154,7 @@ class HTTPBasicsTest (BitcoinTestFramework):
         self.check_invalid_http_version()
         self.check_whitespace_in_headers()
         self.check_connection_limit()
+        self.check_pipelined_data_is_throttled()
 
 
     def check_default_connection(self):
@@ -151,6 +173,18 @@ class HTTPBasicsTest (BitcoinTestFramework):
         # Close
         conn.close_sock()
         assert conn.sock_closed()
+
+
+    def check_socket_exclusivity(self):
+        self.log.info("Checking that another process cannot bind the HTTP listen port")
+        url = urllib.parse.urlparse(self.node.url)
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as competing_listener:
+            competing_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            # Ill-configured sockets permit port reuse unless the original
+            # listener requested exclusive address use.
+            assert_raises(
+                OSError,
+                lambda: competing_listener.bind((url.hostname, url.port)))
 
 
     def check_keepalive_connection(self):
@@ -192,8 +226,7 @@ class HTTPBasicsTest (BitcoinTestFramework):
 
         # Excessive URI size plus default headers breaks the limit.
         conn = BitcoinHTTPConnection(self.node)
-        response2 = conn.get(f'/{"x" * MAX_HEADERS_SIZE}')
-        assert_equal(response2.status, http.client.BAD_REQUEST)
+        self.send_bad_and_tolerate_disconnect(conn, lambda: conn.get(f'/{"x" * MAX_HEADERS_SIZE}'))
 
         # Compute how many short header lines need to be added to http.client
         # default headers to make / break the total limit in a single request.
@@ -212,8 +245,7 @@ class HTTPBasicsTest (BitcoinTestFramework):
         conn = BitcoinHTTPConnection(self.node)
         for i in range(headers_above_limit):
             conn.add_header(f"header_{i:04}", "foo")
-        response3 = conn.get('/x')
-        assert_equal(response3.status, http.client.BAD_REQUEST)
+        self.send_bad_and_tolerate_disconnect(conn, lambda: conn.get('/x'))
 
         # Compute how much data we can add to a request message body
         # to make / break the limit.
@@ -593,8 +625,7 @@ class HTTPBasicsTest (BitcoinTestFramework):
         # Extra whitespace before colon in header.
         conn = BitcoinHTTPConnection(self.node)
         conn.headers = {"Authorization ": f"Basic {str_to_b64str(conn.authpair)}"}
-        response = conn.post('/', '{"method": "getbestblockhash"}')
-        assert_equal(response.status, http.client.BAD_REQUEST)
+        self.send_bad_and_tolerate_disconnect(conn, lambda: conn.post('/', '{"method": "getbestblockhash"}'))
 
         # Extra whitespace at start of new line.
         # "line folding" as defined in
@@ -603,8 +634,7 @@ class HTTPBasicsTest (BitcoinTestFramework):
         # https://www.rfc-editor.org/rfc/rfc7230#section-3.2.4
         conn = BitcoinHTTPConnection(self.node)
         conn.headers = {"Authorization": f"Basic \n {str_to_b64str(conn.authpair)}"}
-        response = conn.post('/', '{"method": "getbestblockhash"}')
-        assert_equal(response.status, http.client.BAD_REQUEST)
+        self.send_bad_and_tolerate_disconnect(conn, lambda: conn.post('/', '{"method": "getbestblockhash"}'))
 
 
     def check_connection_limit(self):
@@ -681,6 +711,85 @@ class HTTPBasicsTest (BitcoinTestFramework):
             # Close all remaining connections for clean up
             for client in connections:
                 client.close_sock()
+
+
+    def check_pipelined_data_is_throttled(self):
+        self.log.info("Check that pipelined data is throttled while a request is in flight")
+        self.restart_node(0, extra_args=["-rpcservertimeout=0"])
+
+        conn = BitcoinHTTPConnection(self.node)
+
+        # A blocking RPC request: the server reads it fully and it enters the
+        # worker pool as "in flight" (m_req_busy) until a new block arrives.
+        tip_height = self.node.getblockcount()
+        conn.post_raw('/', f'{{"method": "waitforblockheight", "params": [{tip_height + 1}]}}')
+
+        # Flood the same connection with big pipelined requests:
+        # Large garbage submitblock (just under MAX_BODY_SIZE each, including HTTP/jsonrpc overhead)
+        garbage_block = "0" * (MAX_BODY_SIZE - 100)
+        body = f'{{"method": "submitblock", "params": ["{garbage_block}"]}}'
+        flood = (
+            f'POST / HTTP/1.1\r\nAuthorization: Basic {str_to_b64str(conn.authpair)}\r\n'
+            f'Content-Length: {len(body)}\r\n\r\n' +
+            body
+        ).encode("ascii")
+
+        # Non-blocking send: When the server stops reading from the buffer
+        # due to TCP backpressure, Python will raise an error. If the socket
+        # was set to blocking, we would have to wait for an ambiguous timeout.
+        conn.conn.sock.setblocking(False)
+
+        # Kernel socket buffer sizes vary widely across platforms,
+        # so we can't rely on counting sent() bytes to determine if the
+        # server is actually draining its end of the socket.
+        # When the server is busy, a continuous flood from the client SHOULD,
+        # at some point, stall indefinitely. An unpatched server will continue
+        # to accept data from the socket, at some rate, indefinitely.
+
+        # If send() is blocked for this many seconds, we assume the server
+        # is behaving correctly.
+        STALL_TIMEOUT = 5
+        # If send() continues to progress for this many seconds, we assume
+        # the server is vulnerable to memory exhaustion.
+        PROGRESS_TIMEOUT = 10
+
+        sent = 0
+        stuck_since = None
+        start = time.monotonic()
+        while True:
+            try:
+                sent += conn.conn.sock.send(flood[sent % len(flood):])
+                # Progress: the server is still reading
+                stuck_since = None
+                self.log.debug(f"sent: {sent}")
+                assert sent <= len(flood) * 10, (
+                    f"Server accepted {sent} bytes of pipelined data while a "
+                    "request was still in flight: the receive buffer is not throttled")
+            except BlockingIOError:
+                # The kernel send buffer is full (EAGAIN).
+                # That's good, but we still need to determine if we are
+                # feeling backpressure from the server or the client-side buffer.
+                if stuck_since is None:
+                    stuck_since = time.monotonic()
+                elif time.monotonic() - stuck_since > STALL_TIMEOUT:
+                    # No progress: the server has stopped reading.
+                    break
+            if stuck_since is None and time.monotonic() - start > PROGRESS_TIMEOUT:
+                # Continuous progress: the server is still draining the
+                # receive buffer while a request is in flight.
+                raise AssertionError(
+                    f"Server kept reading pipelined data ({sent} bytes) while a "
+                    f"request was still in flight for {PROGRESS_TIMEOUT}s.")
+            time.sleep(0.05)
+
+        self.log.info(f"Pipelined flood stalled after {sent} bytes; no progress for {STALL_TIMEOUT}s.")
+
+        # Unblock the client request queue.
+        conn.conn.sock.settimeout(10)
+        generated_block = self.generate(self.node, 1, sync_fun=self.no_op)[0]
+        # First reply is for the blocking request.
+        response = conn.recv_raw().decode()
+        assert generated_block in response
 
 
 if __name__ == '__main__':
