@@ -64,8 +64,12 @@ valtype DecodeValueFromRPCOrThrow (const UniValue& val, const UniValue& opt);
 /**
  * RPCResult for the "nameOp" field that is optionally returned from
  * some RPCs that decode scripts.
+ *
+ * This is a function returning a function-local static (rather than a
+ * global object), so that it is safe to use from the dynamic initialization
+ * of globals in other translation units, whose order is unspecified.
  */
-extern const RPCResult NameOpResult;
+const RPCResult& NameOpResult ();
 
 /**
  * Builder class for the RPC results for methods that return information about

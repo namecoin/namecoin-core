@@ -1358,7 +1358,7 @@ static RPCMethod gettxout()
                     {RPCResult::Type::STR_HEX, "hex", "The raw output script bytes, hex-encoded"},
                     {RPCResult::Type::STR, "type", "The type, eg pubkeyhash"},
                     {RPCResult::Type::STR, "address", /*optional=*/true, "The address (only if a well-defined address exists)"},
-                    NameOpResult,
+                    NameOpResult(),
                 }},
                 {RPCResult::Type::BOOL, "coinbase", "Coinbase or not"},
             }},
