@@ -618,6 +618,10 @@ name_firstupdate ()
 
       LOCK2 (pwallet->cs_wallet, cs_main);
 
+      /* Deriving rand needs the private keys.  */
+      if (!fixedRand)
+        EnsureWalletIsUnlocked (*pwallet);
+
       for (const auto& item : pwallet->mapWallet)
         {
           const CWalletTx& tx = item.second;
@@ -679,6 +683,7 @@ name_firstupdate ()
   if (!fixedRand)
     {
       LOCK (pwallet->cs_wallet);
+      EnsureWalletIsUnlocked (*pwallet);
       bool saltOK = getNameSalt (pwallet, name, prevOut.scriptPubKey, rand);
       if (!saltOK)
           throw JSONRPCError (RPC_TRANSACTION_ERROR, "could not generate rand for txid");

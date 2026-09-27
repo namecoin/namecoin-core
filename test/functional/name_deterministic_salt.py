@@ -154,6 +154,20 @@ class NameDeterministicSaltTest(NameTestFramework):
         assert_raises_rpc_error(-25, "scan for previous txid failed", node.name_firstupdate, "d/foreign")
         assert_raises_rpc_error(-25, "could not generate rand for txid", node.name_firstupdate, "d/foreign", None, foreignNew[0])
 
+        self.log.info("Deriving rand needs an unlocked wallet.")
+        node.encryptwallet("passphrase")
+        node.walletpassphrase("passphrase", 600)
+        lockedNew = node.name_new("d/locked")
+        self.generate (node, 12)
+        node.walletlock()
+        assert_raises_rpc_error(-13, "walletpassphrase", node.name_firstupdate, "d/locked")
+        assert_raises_rpc_error(-13, "walletpassphrase", node.name_firstupdate, "d/locked", None, lockedNew[0])
+        node.walletpassphrase("passphrase", 600)
+        node.name_firstupdate ("d/locked")
+        self.generate (node, 1)
+        self.checkName(0, "d/locked", "", 30, False)
+        self.assertFirstupdate("d/locked", lockedNew[0], lockedNew[1])
+
     def assertFirstupdate(self, name, newTxid, rand):
         """Check that the confirmed name_firstupdate of name spends the
         name_new output of the transaction newTxid and reveals rand."""
