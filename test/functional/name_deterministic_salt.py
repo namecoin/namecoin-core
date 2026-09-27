@@ -144,6 +144,12 @@ class NameDeterministicSaltTest(NameTestFramework):
 
         self.log.info("Gave exception, as expected.")
 
+        self.log.info("Now let's give it the TXID of a name operation that is not a name_new.")
+        # The name output of the name_firstupdate of d/name2 is unspent.
+        firstTxid = node.name_show("d/name2")["txid"]
+        for rand in [None, "00" * 20]:
+            assert_raises_rpc_error(-25, "previous tx is not name_new", node.name_firstupdate, "d/name5", rand, firstTxid)
+
         self.log.info("A name_new to an address of another wallet is not matched.")
         node.createwallet("other")
         foreignAddr = node.get_wallet_rpc("other").getnewaddress()

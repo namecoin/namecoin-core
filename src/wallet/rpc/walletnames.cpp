@@ -683,7 +683,12 @@ name_firstupdate ()
       throw JSONRPCError (RPC_TRANSACTION_ERROR, "previous txid not found");
   }
 
+  /* This has to be checked before the commitment of the name_new is used
+     to verify a derived rand below.  */
   const CNameScript prevNameOp(prevOut.scriptPubKey);
+  assert (prevNameOp.isNameOp ());
+  if (prevNameOp.getNameOp () != OP_NAME_NEW)
+    throw JSONRPCError (RPC_TRANSACTION_ERROR, "previous tx is not name_new");
 
   if (!fixedRand)
     {
@@ -695,10 +700,6 @@ name_firstupdate ()
       if (!saltMatchesHash (name, rand, prevNameOp.getOpHash ()))
         throw JSONRPCError (RPC_TRANSACTION_ERROR, "generated rand for txid does not match");
     }
-
-  assert (prevNameOp.isNameOp ());
-  if (prevNameOp.getNameOp () != OP_NAME_NEW)
-    throw JSONRPCError (RPC_TRANSACTION_ERROR, "previous tx is not name_new");
 
   if (!saltMatchesHash (name, rand, prevNameOp.getOpHash ()))
     throw JSONRPCError (RPC_TRANSACTION_ERROR, "rand value is wrong");
