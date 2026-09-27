@@ -857,12 +857,14 @@ const RPCResult& DecodePSBTInputs()
                     {RPCResult::Type::STR, "asm", "Disassembly of the redeem script"},
                     {RPCResult::Type::STR_HEX, "hex", "The raw redeem script bytes, hex-encoded"},
                     {RPCResult::Type::STR, "type", "The type, eg 'pubkeyhash'"},
+                    NameOpResult(),
                 }},
                 {RPCResult::Type::OBJ, "witness_script", /*optional=*/true, "",
                 {
                     {RPCResult::Type::STR, "asm", "Disassembly of the witness script"},
                     {RPCResult::Type::STR_HEX, "hex", "The raw witness script bytes, hex-encoded"},
                     {RPCResult::Type::STR, "type", "The type, eg 'pubkeyhash'"},
+                    NameOpResult(),
                 }},
                 {RPCResult::Type::ARR, "bip32_derivs", /*optional=*/true, "",
                 {
@@ -1003,12 +1005,14 @@ const RPCResult& DecodePSBTOutputs()
                     {RPCResult::Type::STR, "asm", "Disassembly of the redeem script"},
                     {RPCResult::Type::STR_HEX, "hex", "The raw redeem script bytes, hex-encoded"},
                     {RPCResult::Type::STR, "type", "The type, eg 'pubkeyhash'"},
+                    NameOpResult(),
                 }},
                 {RPCResult::Type::OBJ, "witness_script", /*optional=*/true, "",
                 {
                     {RPCResult::Type::STR, "asm", "Disassembly of the witness script"},
                     {RPCResult::Type::STR_HEX, "hex", "The raw witness script bytes, hex-encoded"},
                     {RPCResult::Type::STR, "type", "The type, eg 'pubkeyhash'"},
+                    NameOpResult(),
                 }},
                 {RPCResult::Type::ARR, "bip32_derivs", /*optional=*/true, "",
                 {

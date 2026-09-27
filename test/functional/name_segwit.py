@@ -18,6 +18,13 @@ from test_framework.messages import (
   CTxInWitness,
   CTxWitness,
 )
+from test_framework.psbt import (
+  PSBT,
+  PSBT_IN_REDEEM_SCRIPT,
+  PSBT_IN_WITNESS_SCRIPT,
+  PSBT_OUT_REDEEM_SCRIPT,
+  PSBT_OUT_WITNESS_SCRIPT,
+)
 from test_framework.util import (
   assert_equal,
   assert_greater_than,
@@ -167,6 +174,34 @@ class NameSegwitTest (NameTestFramework):
     assert_equal (utxo['scriptPubKey']['address'], addr)
     assert 'nameOp' not in utxo['scriptPubKey']
 
+  def checkPsbtNameScriptFields (self, name):
+    """
+    Verifies that decodepsbt shows the name operation of redeem and
+    witness scripts (of an input and an output) that are name scripts
+    themselves.  Wallets do not create such PSBTs, so this uses a
+    hand-crafted one with the current script of the given name in all
+    four fields.  Since the test framework runs the nodes with
+    -rpcdoccheck, this also verifies that the fields are documented.
+    """
+
+    data = self.node.name_show (name)
+    spk = self.node.gettxout (data['txid'], data['vout'])['scriptPubKey']
+    script = bytes.fromhex (spk['hex'])
+
+    dest = self.node.getnewaddress ()
+    psbt = self.node.createpsbt ([data], {dest: Decimal ('0.01')})
+    psbt = PSBT.from_base64 (psbt)
+    psbt.i[0].map[PSBT_IN_REDEEM_SCRIPT] = script
+    psbt.i[0].map[PSBT_IN_WITNESS_SCRIPT] = script
+    psbt.o[0].map[PSBT_OUT_REDEEM_SCRIPT] = script
+    psbt.o[0].map[PSBT_OUT_WITNESS_SCRIPT] = script
+
+    decoded = self.node.decodepsbt (psbt.to_base64 ())
+    for entry in [decoded['inputs'][0], decoded['outputs'][0]]:
+      for field in ["redeem_script", "witness_script"]:
+        assert_equal (entry[field]['hex'], spk['hex'])
+        assert_equal (entry[field]['nameOp'], spk['nameOp'])
+
   def run_test (self):
     self.node = self.nodes[0]
 
@@ -231,6 +266,10 @@ class NameSegwitTest (NameTestFramework):
     self.node.name_update (name, "value 3", {"destAddress": addr})
     self.generate (self.node, 1)
     self.checkNameValueAddr (name, "value 3", addr)
+
+    # Redeem and witness scripts in a PSBT that are name scripts
+    # themselves show their name operation as well.
+    self.checkPsbtNameScriptFields (name)
 
 
 if __name__ == '__main__':
