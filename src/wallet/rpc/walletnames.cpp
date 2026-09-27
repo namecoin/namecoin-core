@@ -631,13 +631,18 @@ name_firstupdate ()
           CScript output;
           CNameScript nameOp;
           bool found = false;
-          for (CTxOut curOutput : tx.GetTx ()->vout)
+          for (unsigned i = 0; i < tx.GetTx ()->vout.size (); ++i)
             {
-              CScript curScript = curOutput.scriptPubKey;
+              CScript curScript = tx.GetTx ()->vout[i].scriptPubKey;
               const CNameScript cur(curScript);
               if (!cur.isNameOp ())
                 continue;
               if (cur.getNameOp () != OP_NAME_NEW)
+                continue;
+              /* Skip NAME_NEW outputs that the wallet has spent already.
+                 The one of an earlier registration of the same name (that
+                 has expired since) would otherwise match below as well.  */
+              if (pwallet->IsSpent (COutPoint (tx.GetHash (), i)))
                 continue;
               if (found) {
                 LogDebug (BCLog::NAMES, "%s: wallet contains tx with multiple name outputs", __func__);

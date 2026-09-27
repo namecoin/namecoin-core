@@ -154,6 +154,32 @@ class NameDeterministicSaltTest(NameTestFramework):
         assert_raises_rpc_error(-25, "scan for previous txid failed", node.name_firstupdate, "d/foreign")
         assert_raises_rpc_error(-25, "could not generate rand for txid", node.name_firstupdate, "d/foreign", None, foreignNew[0])
 
+        self.log.info("Register expired names again, without rand and txid.")
+        # The wallet keeps the spent name_new of the first registration,
+        # which matches the name as well.  After a restart the scan sees the
+        # wallet transactions in a different order, so use several names.
+        names = ["d/again-%d" % i for i in range(10)]
+        for name in names:
+            node.name_new(name)
+        self.generate (node, 12)
+        for name in names:
+            node.name_firstupdate (name)
+        self.generate (node, 1)
+        self.generate (node, 30)
+        for name in names:
+            assert_equal(node.name_show(name, {"allowExpired": True})["expired"], True)
+        secondNew = {}
+        for name in names:
+            secondNew[name] = node.name_new(name)
+        self.generate (node, 12)
+        self.restart_node(0)
+        for name in names:
+            node.name_firstupdate (name)
+        self.generate (node, 1)
+        for name in names:
+            self.checkName(0, name, "", 30, False)
+            self.assertFirstupdate(name, secondNew[name][0], secondNew[name][1])
+
         self.log.info("Deriving rand needs an unlocked wallet.")
         node.encryptwallet("passphrase")
         node.walletpassphrase("passphrase", 600)
