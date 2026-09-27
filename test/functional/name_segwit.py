@@ -120,6 +120,53 @@ class NameSegwitTest (NameTestFramework):
     blkHex = block.serialize (withWitness).hex ()
     return self.node.submitblock (blkHex)
 
+  def checkPsbtWitnessUtxo (self, name, op, value, scriptType):
+    """
+    Builds a PSBT that spends the given name (which must be at a segwit
+    address of the wallet) and verifies that decodepsbt shows the name
+    operation of its witness_utxo (which is the name's current output,
+    with the given operation, value and script type).  Since the test
+    framework runs the nodes with -rpcdoccheck, this also verifies that
+    the field is documented in the RPC help.
+    """
+
+    data = self.node.name_show (name)
+    txo = self.node.gettxout (data['txid'], data['vout'])
+
+    addr = self.node.getnewaddress ()
+    psbt = self.node.createpsbt ([data], {addr: Decimal ('0.01')})
+    nameOp = {"op": "name_update", "name": name, "value": "new value"}
+    psbt = self.node.namepsbt (psbt, 0, nameOp)['psbt']
+    psbt = self.node.walletprocesspsbt (psbt, False)['psbt']
+
+    utxo = self.node.decodepsbt (psbt)['inputs'][0]['witness_utxo']
+    assert_equal (utxo['amount'], txo['value'])
+    assert_equal (utxo['scriptPubKey'], txo['scriptPubKey'])
+    assert_equal (utxo['scriptPubKey']['type'], scriptType)
+    assert_equal (utxo['scriptPubKey']['address'], data['address'])
+    assert_equal (utxo['scriptPubKey']['nameOp']['op'], op)
+    assert_equal (utxo['scriptPubKey']['nameOp']['name'], name)
+    assert_equal (utxo['scriptPubKey']['nameOp']['value'], value)
+
+  def checkPsbtPlainWitnessUtxo (self):
+    """
+    Verifies that decodepsbt shows no name operation in the witness_utxo
+    of an input that spends an ordinary (non-name) P2WPKH coin.
+    """
+
+    addr = self.node.getnewaddress ("", "bech32")
+    self.node.sendtoaddress (addr, Decimal ('1'))
+    u = self.node.listunspent (0, 9999999, [addr])[0]
+
+    dest = self.node.getnewaddress ()
+    psbt = self.node.createpsbt ([u], {dest: Decimal ('0.5')})
+    psbt = self.node.walletprocesspsbt (psbt, False)['psbt']
+
+    utxo = self.node.decodepsbt (psbt)['inputs'][0]['witness_utxo']
+    assert_equal (utxo['scriptPubKey']['type'], "witness_v0_keyhash")
+    assert_equal (utxo['scriptPubKey']['address'], addr)
+    assert 'nameOp' not in utxo['scriptPubKey']
+
   def run_test (self):
     self.node = self.nodes[0]
 
@@ -167,6 +214,12 @@ class NameSegwitTest (NameTestFramework):
                     + ' (Script failed an OP_EQUALVERIFY operation)')
     self.checkNameValueAddr (name, value, addr)
 
+    # Decoding a PSBT that spends the name shows the name operation in
+    # the witness_utxo of its input (but not for an ordinary coin).
+    self.checkPsbtWitnessUtxo (name, "name_firstupdate", value,
+                               "witness_v0_keyhash")
+    self.checkPsbtPlainWitnessUtxo ()
+
     # Updating the name ordinarily (with signature) should work fine even
     # though it is at a segwit address.  Also spending from P2SH-segwit
     # should work fine.
@@ -174,6 +227,7 @@ class NameSegwitTest (NameTestFramework):
     self.node.name_update (name, "value 2", {"destAddress": addrP2SH})
     self.generate (self.node, 1)
     self.checkNameValueAddr (name, "value 2", addrP2SH)
+    self.checkPsbtWitnessUtxo (name, "name_update", "value 2", "scripthash")
     self.node.name_update (name, "value 3", {"destAddress": addr})
     self.generate (self.node, 1)
     self.checkNameValueAddr (name, "value 3", addr)

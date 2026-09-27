@@ -844,6 +844,7 @@ const RPCResult& DecodePSBTInputs()
                         {RPCResult::Type::STR_HEX, "hex", "The raw output script bytes, hex-encoded"},
                         {RPCResult::Type::STR, "type", "The type, eg 'pubkeyhash'"},
                         {RPCResult::Type::STR, "address", /*optional=*/true, "The Bitcoin address (only if a well-defined address exists)"},
+                        NameOpResult(),
                     }},
                 }},
                 {RPCResult::Type::OBJ_DYN, "partial_signatures", /*optional=*/true, "",
