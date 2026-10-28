@@ -34,8 +34,8 @@ class NameEncodingsTest (NameTestFramework):
   nameCounter = 0
 
   # Keep track of the currently set encodings.
-  nameEncoding = 'ascii'
-  valueEncoding = 'ascii'
+  name_encoding = 'ascii'
+  value_encoding = 'ascii'
 
   def set_test_params (self):
     # We need -namehistory for the test, so use node 1.  Thus we have to
@@ -48,8 +48,8 @@ class NameEncodingsTest (NameTestFramework):
     args.append ("-namehistory")
     self.restart_node (0, extra_args=args)
 
-    self.nameEncoding = nameEnc
-    self.valueEncoding = valueEnc
+    self.name_encoding = nameEnc
+    self.value_encoding = valueEnc
 
   def uniqueName (self, baseName, enc='ascii'):
     """
@@ -106,17 +106,17 @@ class NameEncodingsTest (NameTestFramework):
 
     data = self.node.name_pending (name)
     assert_equal (len (data), 1)
-    assert_equal (data[0]['name_encoding'], self.nameEncoding)
+    assert_equal (data[0]['name_encoding'], self.name_encoding)
     assert_equal (data[0]['name'], name)
-    assert_equal (data[0]['value_encoding'], self.valueEncoding)
+    assert_equal (data[0]['value_encoding'], self.value_encoding)
     assert_equal (data[0]['value'], value)
     assert_equal (data[0]['txid'], txid)
 
     self.generate (self.node, 1)
     data = self.node.name_show (name)
-    assert_equal (data['name_encoding'], self.nameEncoding)
+    assert_equal (data['name_encoding'], self.name_encoding)
     assert_equal (data['name'], name)
-    assert_equal (data['value_encoding'], self.valueEncoding)
+    assert_equal (data['value_encoding'], self.value_encoding)
     assert_equal (data['value'], value)
     assert_equal (data['txid'], txid)
 
@@ -468,13 +468,13 @@ class NameEncodingsTest (NameTestFramework):
     # but the basic testing is always the same.
     def verifyReadMethod (func):
       assert_raises_rpc_error (-3, "is not of expected type string",
-                               func, nameAscii, {"nameEncoding": 42})
+                               func, nameAscii, {"name_encoding": 42})
       assert_raises_rpc_error (-3, "is not of expected type string",
-                               func, nameAscii, {"valueEncoding": 42})
+                               func, nameAscii, {"value_encoding": 42})
       assert_raises_rpc_error (-1000, "Name/value is invalid",
                                func, nameUtf8)
 
-      res = func (nameUtf8, {"nameEncoding": "utf8"})
+      res = func (nameUtf8, {"name_encoding": "utf8"})
       assert_equal (res['name_encoding'], 'utf8')
       assert_equal (res['name'], nameUtf8)
       assert_equal (res['value_encoding'], 'ascii')
@@ -487,7 +487,7 @@ class NameEncodingsTest (NameTestFramework):
       assert 'value' not in res
       assert_equal (res['value_error'], 'invalid data for ascii')
 
-      res = func (nameAscii, {"valueEncoding": "utf8"})
+      res = func (nameAscii, {"value_encoding": "utf8"})
       assert_equal (res['name_encoding'], 'ascii')
       assert_equal (res['name'], nameAscii)
       assert_equal (res['value_encoding'], 'utf8')
@@ -524,12 +524,12 @@ class NameEncodingsTest (NameTestFramework):
 
     # Test that name_list also supports the options argument if no name
     # is given.
-    res = self.node.name_list (options={"nameEncoding": "utf8"})
+    res = self.node.name_list (options={"name_encoding": "utf8"})
     assert resultContainsName (res, nameUtf8, 'utf8')
 
     # Create a pending update for name_pending.
-    self.node.name_update (nameAscii, valueUtf8, {"valueEncoding": "utf8"})
-    self.node.name_update (nameUtf8, valueAscii, {"nameEncoding": "utf8"})
+    self.node.name_update (nameAscii, valueUtf8, {"value_encoding": "utf8"})
+    self.node.name_update (nameUtf8, valueAscii, {"name_encoding": "utf8"})
     def namePendingWrapper (name, *opt):
       res = self.node.name_pending (name, *opt)
       assert_equal (len (res), 1)
@@ -537,7 +537,7 @@ class NameEncodingsTest (NameTestFramework):
     verifyReadMethod (namePendingWrapper)
 
     # Also test name_pending with options but without name.
-    res = self.node.name_pending (options={"nameEncoding": "utf8"})
+    res = self.node.name_pending (options={"name_encoding": "utf8"})
     assert resultContainsName (res, nameUtf8, 'utf8')
 
   def test_rpcOption (self):
@@ -562,16 +562,16 @@ class NameEncodingsTest (NameTestFramework):
     # Type check for the encoding options.
     assert_raises_rpc_error (-3, "is not of expected type string",
                              self.node.name_update, nameAscii, valueAscii,
-                             {"nameEncoding": 42})
+                             {"name_encoding": 42})
     assert_raises_rpc_error (-3, "is not of expected type string",
                              self.node.name_update, nameAscii, valueAscii,
-                             {"valueEncoding": 42})
+                             {"value_encoding": 42})
 
     # name_new both names, verify expected behaviour.
     newAscii = self.node.name_new (nameAscii)
     assert_raises_rpc_error (-1000, "Name/value is invalid",
                              self.node.name_new, nameUtf8)
-    newUtf8 = self.node.name_new (nameUtf8, {"nameEncoding": "utf8"})
+    newUtf8 = self.node.name_new (nameUtf8, {"name_encoding": "utf8"})
     self.generate (self.node, 12)
 
     # firstupdate the names and verify expected behaviour.
@@ -579,21 +579,21 @@ class NameEncodingsTest (NameTestFramework):
                              self.firstupdateName,
                              0, nameAscii, newAscii, valueUtf8)
     self.firstupdateName (0, nameAscii, newAscii, valueUtf8,
-                          {"valueEncoding": "utf8"})
+                          {"value_encoding": "utf8"})
     assert_raises_rpc_error (-1000, "Name/value is invalid",
                              self.firstupdateName,
                              0, nameUtf8, newUtf8, valueAscii)
     self.firstupdateName (0, nameUtf8, newUtf8, valueAscii,
-                          {"nameEncoding": "utf8"})
+                          {"name_encoding": "utf8"})
     self.generate (self.node, 1)
 
     # update the names and verify also that.
     assert_raises_rpc_error (-1000, "Name/value is invalid",
                              self.node.name_update, nameAscii, valueUtf8)
-    self.node.name_update (nameAscii, valueUtf8, {"valueEncoding": "utf8"})
+    self.node.name_update (nameAscii, valueUtf8, {"value_encoding": "utf8"})
     assert_raises_rpc_error (-1000, "Name/value is invalid",
                              self.node.name_update, nameUtf8, valueAscii)
-    self.node.name_update (nameUtf8, valueAscii, {"nameEncoding": "utf8"})
+    self.node.name_update (nameUtf8, valueAscii, {"name_encoding": "utf8"})
     self.generate (self.node, 1)
 
     # Verify using name_show just to make sure all worked as expected and did

@@ -529,7 +529,7 @@ void SendCoinsDialog::sendButtonClicked([[maybe_unused]] bool checked)
         // failed, or more signatures are needed.
         if (broadcast) {
             // now send the prepared transaction
-            model->sendCoins(*m_current_transaction);
+            model->send_coins(*m_current_transaction);
             Q_EMIT coinsSent(m_current_transaction->getWtx()->GetHash());
         }
     }
@@ -706,7 +706,7 @@ void SendCoinsDialog::refreshBalance()
     updateSmartFeeLabel();
 }
 
-void SendCoinsDialog::processSendCoinsReturn(const WalletModel::SendCoinsReturn &sendCoinsReturn, const QString &msgArg)
+void SendCoinsDialog::processSendCoinsReturn(const WalletModel::SendCoinsReturn &send_coinsReturn, const QString &msgArg)
 {
     QPair<QString, CClientUIInterface::MessageBoxFlags> msgParams;
     // Default to a warning message, override if error message is needed
@@ -714,7 +714,7 @@ void SendCoinsDialog::processSendCoinsReturn(const WalletModel::SendCoinsReturn 
 
     // This comment is specific to SendCoinsDialog usage of WalletModel::SendCoinsReturn.
     // All status values are used only in WalletModel::prepareTransaction()
-    switch(sendCoinsReturn.status)
+    switch(send_coinsReturn.status)
     {
     case WalletModel::InvalidAddress:
         msgParams.first = tr("The recipient address is not valid. Please recheck.");

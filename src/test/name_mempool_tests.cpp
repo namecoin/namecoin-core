@@ -67,7 +67,7 @@ public:
   }
 
   /**
-   * Returns the hash bytes for a name_new.
+   * Returns the hash bytes for a preregistername.
    */
   static valtype
   NewHash (const std::string& nm, const char rand)
@@ -95,7 +95,7 @@ public:
   }
 
   /**
-   * Builds a name_firstupdate script for the given name and rand value.
+   * Builds a registername script for the given name and rand value.
    * The value we update to is just a fixed one.
    */
   static CScript
@@ -108,7 +108,7 @@ public:
   }
 
   /**
-   * Builds a name_update script based on the given name and value.
+   * Builds a updatename script based on the given name and value.
    */
   static CScript
   UpdateScript (const CScript& addr, const std::string& nm,
@@ -242,7 +242,7 @@ BOOST_FIXTURE_TEST_CASE (pendingChainLength_lastNameOutput,
   BOOST_CHECK_EQUAL (mempool.pendingNameChainLength (Name ("chain")), 3);
 }
 
-BOOST_FIXTURE_TEST_CASE (name_new, NameMempoolTestSetup)
+BOOST_FIXTURE_TEST_CASE (preregistername, NameMempoolTestSetup)
 {
   const auto tx1 = Tx (NewScript (ADDR, "foo", 'a'));
   const auto tx1p = Tx (NewScript (OTHER_ADDR, "foo", 'a'));
@@ -267,7 +267,7 @@ BOOST_FIXTURE_TEST_CASE (name_new, NameMempoolTestSetup)
   BOOST_CHECK (!mempool.checkNameOps (tx1p));
 }
 
-BOOST_FIXTURE_TEST_CASE (name_firstupdate, NameMempoolTestSetup)
+BOOST_FIXTURE_TEST_CASE (registername, NameMempoolTestSetup)
 {
   const auto tx1 = Tx (FirstScript (ADDR, "foo", 'a'));
   const auto tx2 = Tx (FirstScript (ADDR, "foo", 'b'));
@@ -287,7 +287,7 @@ BOOST_FIXTURE_TEST_CASE (name_firstupdate, NameMempoolTestSetup)
   BOOST_CHECK (mempool.checkNameOps (tx2));
 }
 
-BOOST_FIXTURE_TEST_CASE (name_update, NameMempoolTestSetup)
+BOOST_FIXTURE_TEST_CASE (updatename, NameMempoolTestSetup)
 {
   const auto tx1 = Tx (UpdateScript (ADDR, "foo", "x"));
   const auto tx2 = Tx (UpdateScript (ADDR, "foo", "y"));

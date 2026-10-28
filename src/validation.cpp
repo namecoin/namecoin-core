@@ -2302,7 +2302,7 @@ DisconnectResult Chainstate::DisconnectBlock(const CBlock& block, const CBlockIn
 
     /* Undo name expirations.  We use nHeight+1 here in sync with
        the call to ExpireNames, because that's the height at which a
-       possible name_update could be (thus it counts for spendability
+       possible updatename could be (thus it counts for spendability
        of the name).  This is done first to match the order
        in which names are expired when connecting blocks.  */
     if (!UnexpireNames (pindex->nHeight + 1, blockUndo, view, unexpiredNames))

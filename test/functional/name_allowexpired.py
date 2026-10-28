@@ -29,7 +29,7 @@ class NameExpirationTest(NameTestFramework):
         # "d/expired" will be let to lapse.
         #
         # To look up "d/expired" should either succeed or throw an error,
-        # depending on the values of (1) the JSON option allowExpired
+        # depending on the values of (1) the JSON option allow_expired
         # and (2) the command-line parameter -allowexpired.
         # Looking up "d/active" should always succeed regardless.
         new_active = node.name_new("d/active")
@@ -64,17 +64,17 @@ class NameExpirationTest(NameTestFramework):
         self.log.info("Check positive JSON overrides.")
         # checkName only accepts one parameter, use checkNameData
         self.checkNameData(
-            node.name_show("d/expired", {"allowExpired": True}),
+            node.name_show("d/expired", {"allow_expired": True}),
             "d/expired", "value", -1, True)
         self.checkNameData(
-            node_disallow.name_show("d/expired", {"allowExpired": True}),
+            node_disallow.name_show("d/expired", {"allow_expired": True}),
             "d/expired", "value", -1, True)
 
         self.log.info("Check negative JSON overrides.")
         assert_raises_rpc_error(-4, 'name expired',
-            node.name_show, "d/expired", {"allowExpired": False})
+            node.name_show, "d/expired", {"allow_expired": False})
         assert_raises_rpc_error(-4, 'name expired',
-            node_disallow.name_show, "d/expired", {"allowExpired": False})
+            node_disallow.name_show, "d/expired", {"allow_expired": False})
 
 if __name__ == '__main__':
     NameExpirationTest (__file__).main ()

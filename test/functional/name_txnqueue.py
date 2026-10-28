@@ -18,7 +18,7 @@ class NameTransactionQueueTest(NameTestFramework):
         self.log.info("Begin registering a name.")
         # cribbed from name_immature_inputs.py by Daniel Kraft
         addr = node.getnewaddress()
-        new = node.name_new("d/name", {"destAddress": addr})
+        new = node.name_new("d/name", {"dest_address": addr})
         newTx = node.getrawtransaction(new[0])
         nameInd = self.rawtxOutputIndex(0, newTx, addr)
 

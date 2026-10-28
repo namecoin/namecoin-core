@@ -34,7 +34,7 @@ class NameRegistrationTest (NameTestFramework):
     newA = node.name_new ("name-0")
     newAconfl = node.name_new ("name-0")
     addr = node.getnewaddress ()
-    newB = node.name_new ("name-1", {"destAddress": addr})
+    newB = node.name_new ("name-1", {"dest_address": addr})
     node.name_new ("x" * 255)
     assert_raises_rpc_error (-8, 'name is too long', node.name_new, "x" * 256)
     self.generateToOther (5)
@@ -60,7 +60,7 @@ class NameRegistrationTest (NameTestFramework):
     # first_update the names.  Check for too long values.
     addr = node.getnewaddress ()
     txidA = self.firstupdateName (0, "name-0", newA, "value-0",
-                                  {"destAddress": addr})
+                                  {"dest_address": addr})
     assert_raises_rpc_error (-8, 'value is too long',
                              self.firstupdateName, 0, "name-1", newB, "x" * 521)
     self.firstupdateName (0, "name-1", newB, "x" * 520)
@@ -86,16 +86,16 @@ class NameRegistrationTest (NameTestFramework):
     self.checkNameHistory (0, "name-0", ["value-0"])
     self.checkNameHistory (0, "name-1", ["x" * 520])
 
-    # Verify the allowExisting option for name_new.
+    # Verify the allow_existing option for name_new.
     assert_raises_rpc_error (-25, 'exists already',
                              node.name_new, "name-0")
     assert_raises_rpc_error (-25, 'exists already',
                              node.name_new, "name-0",
-                             {"allowExisting": False})
+                             {"allow_existing": False})
     assert_raises_rpc_error (-3, 'is not of expected type bool',
                              node.name_new, "other",
-                             {"allowExisting": 42.5})
-    node.name_new ("name-0", {"allowExisting": True})
+                             {"allow_existing": 42.5})
+    node.name_new ("name-0", {"allow_existing": True})
 
     # Check for error with rand mismatch (wrong name)
     newA = node.name_new ("test-name")
@@ -113,8 +113,8 @@ class NameRegistrationTest (NameTestFramework):
     self.firstupdateName (0, "test-name", newA, "test-value")
 
     # Check for disallowed firstupdate when the name is active.
-    newSteal = node.name_new ("name-0", {"allowExisting": True})
-    newSteal2 = node.name_new ("name-0", {"allowExisting": True})
+    newSteal = node.name_new ("name-0", {"allow_existing": True})
+    newSteal2 = node.name_new ("name-0", {"allow_existing": True})
     self.generateToOther (19)
     self.checkName (0, "name-0", "value-0", 1, False)
     assert_raises_rpc_error (-25, 'this name is already active',
@@ -148,7 +148,7 @@ class NameRegistrationTest (NameTestFramework):
     self.checkNameHistory (0, "test-name", ["test-value", "x" * 520])
 
     addrOther = self.nodes[1].getnewaddress ()
-    node.name_update ("test-name", "sent", {"destAddress": addrOther})
+    node.name_update ("test-name", "sent", {"dest_address": addrOther})
     self.generateToOther (1)
     self.sync_blocks ()
     data = self.checkName (0, "test-name", "sent", 30, False)

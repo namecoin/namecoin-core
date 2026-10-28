@@ -316,7 +316,7 @@ BlockAssembler::TxAllowedForNamecoin (const CTransaction& tx) const
             }
         }
 
-      /* If the name_new is not only immature but actually unconfirmed, then
+      /* If the preregistername is not only immature but actually unconfirmed, then
          the GetCoin lookup above fails for it and we never reach the height
          check.  In this case, nameNewFound is false and we should not yet
          include the transaction in a mined block.  */

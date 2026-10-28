@@ -21,7 +21,7 @@ class NameUtxoTest (NameTestFramework):
     # and one unexpired name.
 
     addr = node.getnewaddress ()
-    newStale = node.name_new ("d/never-registered", {"destAddress": addr})
+    newStale = node.name_new ("d/never-registered", {"dest_address": addr})
     txidStale = newStale[0]
     txStale = node.getrawtransaction (txidStale)
     voutStale = self.rawtxOutputIndex (0, txStale, addr)

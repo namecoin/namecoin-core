@@ -58,31 +58,31 @@ class NameScanningTest (NameTestFramework):
     self.checkList (self.node.name_scan ("d/b", 1), ["d/b"])
 
     # Verify encoding for start argument.
-    self.checkList (self.node.name_scan ("642f63", 10, {"nameEncoding": "hex"}),
+    self.checkList (self.node.name_scan ("642f63", 10, {"name_encoding": "hex"}),
                     ["642f63", "642f6161"])
 
     # Verify filtering based on number of confirmations.
-    self.checkList (self.node.name_scan ("", 100, {"minConf": 35}),
+    self.checkList (self.node.name_scan ("", 100, {"min_conf": 35}),
                     ["d/b", "d/aa"])
-    self.checkList (self.node.name_scan ("", 100, {"minConf": 36}), [])
-    self.checkList (self.node.name_scan ("", 100, {"maxConf": 19}), [])
-    self.checkList (self.node.name_scan ("", 100, {"maxConf": 20}),
+    self.checkList (self.node.name_scan ("", 100, {"min_conf": 36}), [])
+    self.checkList (self.node.name_scan ("", 100, {"max_conf": 19}), [])
+    self.checkList (self.node.name_scan ("", 100, {"max_conf": 20}),
                     ["d/a", "d/c"])
 
     # Verify interaction with filtering and count.
-    self.checkList (self.node.name_scan ("", 1, {"maxConf": 20}), ["d/a"])
-    self.checkList (self.node.name_scan ("", 2, {"maxConf": 20}),
+    self.checkList (self.node.name_scan ("", 1, {"max_conf": 20}), ["d/a"])
+    self.checkList (self.node.name_scan ("", 2, {"max_conf": 20}),
                     ["d/a", "d/c"])
 
     # Error checks for confirmation options.
-    assert_raises_rpc_error (-8, "minConf must be >= 1",
-                             self.node.name_scan, "", 100, {"minConf": 0})
-    assert_raises_rpc_error (-8, "minConf must be >= 1",
-                             self.node.name_scan, "", 100, {"minConf": -42})
-    self.node.name_scan ("", 100, {"minConf": 1})
-    assert_raises_rpc_error (-8, "maxConf must not be negative",
-                             self.node.name_scan, "", 100, {"maxConf": -1})
-    self.node.name_scan ("", 100, {"maxConf": 0})
+    assert_raises_rpc_error (-8, "min_conf must be >= 1",
+                             self.node.name_scan, "", 100, {"min_conf": 0})
+    assert_raises_rpc_error (-8, "min_conf must be >= 1",
+                             self.node.name_scan, "", 100, {"min_conf": -42})
+    self.node.name_scan ("", 100, {"min_conf": 1})
+    assert_raises_rpc_error (-8, "max_conf must not be negative",
+                             self.node.name_scan, "", 100, {"max_conf": -1})
+    self.node.name_scan ("", 100, {"max_conf": 0})
 
     # Verify filtering based on prefix.
     self.checkList (self.node.name_scan ("", 100, {"prefix": ""}),
@@ -90,10 +90,10 @@ class NameScanningTest (NameTestFramework):
     self.checkList (self.node.name_scan ("", 100, {"prefix": "d/a"}),
                     ["d/a", "d/aa"])
 
-    # Check prefix and nameEncoding.
+    # Check prefix and name_encoding.
     options = {
         "prefix": "642f61",
-        "nameEncoding": "hex",
+        "name_encoding": "hex",
     }
     self.checkList (self.node.name_scan ("", 100, options),
                     ["642f61", "642f6161"])
@@ -107,7 +107,7 @@ class NameScanningTest (NameTestFramework):
     # Multiple filters are combined using "and".
     options = {
         "prefix": "d/a",
-        "maxConf": 20,
+        "max_conf": 20,
     }
     self.checkList (self.node.name_scan ("", 100, options), ["d/a"])
 

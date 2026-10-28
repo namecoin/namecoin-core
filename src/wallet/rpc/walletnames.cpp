@@ -102,13 +102,13 @@ void DestinationAddressHelper::setOptions (const UniValue& opt)
 {
   RPCTypeCheckObj (opt,
     {
-      {"destAddress", UniValueType (UniValue::VSTR)},
+      {"dest_address", UniValueType (UniValue::VSTR)},
     },
     true, false);
-  if (!opt.exists ("destAddress"))
+  if (!opt.exists ("dest_address"))
     return;
 
-  CTxDestination dest = DecodeDestination (opt["destAddress"].get_str ());
+  CTxDestination dest = DecodeDestination (opt["dest_address"].get_str ());
   if (!IsValidDestination (dest))
     throw JSONRPCError (RPC_INVALID_ADDRESS_OR_KEY, "invalid address");
   overrideDest.reset (new CTxDestination (std::move (dest)));
@@ -137,8 +137,8 @@ void DestinationAddressHelper::finalise ()
 
 /**
  * Sends a name output to the given name script.  This is the "final" step that
- * is common between name_new, name_firstupdate and name_update.  This method
- * also implements the "sendCoins" option, if included.
+ * is common between preregistername, registername and updatename.  This method
+ * also implements the "send_coins" option, if included.
  */
 UniValue
 SendNameOutput (const JSONRPCRequest& request,
@@ -148,7 +148,7 @@ SendNameOutput (const JSONRPCRequest& request,
 {
   RPCTypeCheckObj (opt,
     {
-      {"sendCoins", UniValueType (UniValue::VOBJ)},
+      {"send_coins", UniValueType (UniValue::VOBJ)},
     },
     true, false);
 
@@ -159,15 +159,15 @@ SendNameOutput (const JSONRPCRequest& request,
   std::vector<CRecipient> vecSend;
   vecSend.push_back ({dest, NAME_LOCKED_AMOUNT, false, nameOp});
 
-  if (opt.exists ("sendCoins"))
-    for (const std::string& addr : opt["sendCoins"].getKeys ())
+  if (opt.exists ("send_coins"))
+    for (const std::string& addr : opt["send_coins"].getKeys ())
       {
         const CTxDestination coinDest = DecodeDestination (addr);
         if (!IsValidDestination (coinDest))
           throw JSONRPCError (RPC_INVALID_ADDRESS_OR_KEY,
                               "Invalid address: " + addr);
 
-        const CAmount nAmount = AmountFromValue (opt["sendCoins"][addr]);
+        const CAmount nAmount = AmountFromValue (opt["send_coins"][addr]);
         if (nAmount <= 0)
           throw JSONRPCError (RPC_TYPE_ERROR, "Invalid amount for send");
 
@@ -182,14 +182,14 @@ SendNameOutput (const JSONRPCRequest& request,
 /* ************************************************************************** */
 
 RPCMethod
-name_list ()
+listnames ()
 {
   NameOptionsHelp optHelp;
   optHelp
       .withNameEncoding ()
       .withValueEncoding ();
 
-  return RPCMethod ("name_list",
+  return RPCMethod {"listnames",
       "Shows the status of all names in the wallet.\n",
       {
           {"name", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Only include this name"},
@@ -203,9 +203,9 @@ name_list ()
           }
       },
       RPCExamples {
-          HelpExampleCli ("name_list", "")
-        + HelpExampleCli ("name_list", "\"myname\"")
-        + HelpExampleRpc ("name_list", "")
+          HelpExampleCli ("listnames", "")
+        + HelpExampleCli ("listnames", "\"myname\"")
+        + HelpExampleRpc ("listnames", "")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -292,12 +292,12 @@ name_list ()
 
   return res;
 }
-  );
+    };
 }
 
 /**
  * Generate a salt using HKDF for a given name + private key combination.
- * Indirectly used in name_new and name_firstupdate.
+ * Indirectly used in preregistername and registername.
  * Refactored out to make testing easier.
  * @return True on success, false otherwise
  */
@@ -321,7 +321,7 @@ namespace
 
 /**
  * Generate a salt using HKDF for a given name + txout combination.
- * Used in name_new and name_firstupdate.
+ * Used in preregistername and registername.
  * @return True on success, false otherwise
  */
 bool
@@ -368,17 +368,17 @@ saltMatchesHash(const valtype& name, const valtype& rand, const valtype& expecte
 /* ************************************************************************** */
 
 RPCMethod
-name_new ()
+preregistername ()
 {
   NameOptionsHelp optHelp;
   optHelp
       .withNameEncoding ()
       .withWriteOptions ()
-      .withArg ("allowExisting", RPCArg::Type::BOOL, "false",
-                "If set, then the name_new is sent even if the name exists already");
+      .withArg ("allow_existing", RPCArg::Type::BOOL, "false",
+                "If set, then the preregistername is sent even if the name exists already");
 
-  return RPCMethod ("name_new",
-      "Starts registration of the given name.  Must be followed up with name_firstupdate to finish the registration."
+  return RPCMethod {"preregistername",
+      "Starts registration of the given name.  Must be followed up with registername to finish the registration."
           + HELP_REQUIRING_PASSPHRASE,
       {
           {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name to register"},
@@ -386,13 +386,13 @@ name_new ()
       },
       RPCResult {RPCResult::Type::ARR_FIXED, "", "",
           {
-              {RPCResult::Type::STR_HEX, "txid", "the txid, required for name_firstupdate"},
-              {RPCResult::Type::STR_HEX, "rand", "random value, for name_firstupdate"},
+              {RPCResult::Type::STR_HEX, "txid", "the txid, required for registername"},
+              {RPCResult::Type::STR_HEX, "rand", "random value, for registername"},
           },
       },
       RPCExamples {
-          HelpExampleCli ("name_new", "\"myname\"")
-        + HelpExampleRpc ("name_new", "\"myname\"")
+          HelpExampleCli ("preregistername", "\"myname\"")
+        + HelpExampleRpc ("preregistername", "\"myname\"")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -408,7 +408,7 @@ name_new ()
     options = request.params[1].get_obj ();
   RPCTypeCheckObj (options,
     {
-      {"allowExisting", UniValueType (UniValue::VBOOL)},
+      {"allow_existing", UniValueType (UniValue::VBOOL)},
     },
     true, false);
 
@@ -416,7 +416,7 @@ name_new ()
   if (name.size () > MAX_NAME_LENGTH)
     throw JSONRPCError (RPC_INVALID_PARAMETER, "the name is too long");
 
-  if (!options["allowExisting"].isTrue ())
+  if (!options["allow_existing"].isTrue ())
     {
       LOCK (cs_main);
       CNameData oldData;
@@ -452,7 +452,7 @@ name_new ()
 
   const std::string randStr = HexStr (rand);
   const std::string txid = txidVal.get_str ();
-  LogInfo ("name_new: name=%s, rand=%s, tx=%s\n",
+  LogInfo ("preregistername: name=%s, rand=%s, tx=%s\n",
            EncodeNameForMessage (name), randStr.c_str (), txid.c_str ());
 
   UniValue res(UniValue::VARR);
@@ -461,7 +461,7 @@ name_new ()
 
   return res;
 }
-  );
+    };
 }
 
 /* ************************************************************************** */
@@ -471,7 +471,7 @@ namespace
 
 /**
  * Helper routine to fetch the name output of a previous transaction.  This
- * is required for name_firstupdate.
+ * is required for registername.
  * @param txid Previous transaction ID.
  * @param txOut Set to the corresponding output.
  * @param txIn Set to the CTxIn to include in the new tx.
@@ -515,7 +515,7 @@ getNamePrevout (Chainstate& chainState, const Txid& txid,
 }  // anonymous namespace
 
 RPCMethod
-name_firstupdate ()
+registername ()
 {
   /* There is an undocumented sixth argument that can be used to disable
      the check for already existing names here (it will still be checked
@@ -529,21 +529,21 @@ name_firstupdate ()
       .withValueEncoding ()
       .withWriteOptions ();
 
-  return RPCMethod ("name_firstupdate",
-            "Finishes the registration of a name.  Depends on name_new being already issued."
+  return RPCMethod {"registername",
+            "Finishes the registration of a name.  Depends on preregistername being already issued."
                 + HELP_REQUIRING_PASSPHRASE,
             {
                 {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name to register"},
-                {"rand", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "The rand value of name_new"},
-                {"tx", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "The name_new txid"},
+                {"rand", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "The rand value of preregistername"},
+                {"tx", RPCArg::Type::STR_HEX, RPCArg::Optional::OMITTED, "The preregistername txid"},
                 {"value", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Value for the name"},
                 optHelp.buildRpcArg (),
                 {"allow_active", RPCArg::Type::BOOL, RPCArg::Optional::OMITTED, "Disable check for the name being active"},
             },
             RPCResult {RPCResult::Type::STR_HEX, "", "the transaction ID"},
             RPCExamples {
-                HelpExampleCli ("name_firstupdate", "\"myname\", \"555844f2db9c7f4b25da6cb8277596de45021ef2\" \"a77ceb22aa03304b7de64ec43328974aeaca211c37dd29dcce4ae461bb80ca84\", \"my-value\"")
-              + HelpExampleRpc ("name_firstupdate", "\"myname\", \"555844f2db9c7f4b25da6cb8277596de45021ef2\", \"a77ceb22aa03304b7de64ec43328974aeaca211c37dd29dcce4ae461bb80ca84\", \"my-value\"")
+                HelpExampleCli ("registername", "\"myname\", \"555844f2db9c7f4b25da6cb8277596de45021ef2\" \"a77ceb22aa03304b7de64ec43328974aeaca211c37dd29dcce4ae461bb80ca84\", \"my-value\"")
+              + HelpExampleRpc ("registername", "\"myname\", \"555844f2db9c7f4b25da6cb8277596de45021ef2\", \"a77ceb22aa03304b7de64ec43328974aeaca211c37dd29dcce4ae461bb80ca84\", \"my-value\"")
             },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -611,7 +611,7 @@ name_firstupdate ()
     }
   else
     {
-      // Code slightly duplicates name_scan, but not enough to be able to refactor.
+      // Code slightly duplicates scannameset, but not enough to be able to refactor.
       /* Make sure the results are valid at least up to the most recent block
          the user could have gotten from another RPC command prior to now.  */
       pwallet->BlockUntilSyncedToCurrentChain ();
@@ -688,7 +688,7 @@ name_firstupdate ()
 
   assert (prevNameOp.isNameOp ());
   if (prevNameOp.getNameOp () != OP_NAME_NEW)
-    throw JSONRPCError (RPC_TRANSACTION_ERROR, "previous tx is not name_new");
+    throw JSONRPCError (RPC_TRANSACTION_ERROR, "previous tx is not preregistername");
 
   if (!saltMatchesHash (name, rand, prevNameOp.getOpHash ()))
     throw JSONRPCError (RPC_TRANSACTION_ERROR, "rand value is wrong");
@@ -714,13 +714,13 @@ name_firstupdate ()
 
   return txidVal;
 }
-  );
+    };
 }
 
 /* ************************************************************************** */
 
 RPCMethod
-name_update ()
+updatename ()
 {
   NameOptionsHelp optHelp;
   optHelp
@@ -728,7 +728,7 @@ name_update ()
       .withValueEncoding ()
       .withWriteOptions ();
 
-  return RPCMethod ("name_update",
+  return RPCMethod {"updatename",
       "Updates a name and possibly transfers it."
           + HELP_REQUIRING_PASSPHRASE,
       {
@@ -738,8 +738,8 @@ name_update ()
       },
       RPCResult {RPCResult::Type::STR_HEX, "", "the transaction ID"},
       RPCExamples {
-          HelpExampleCli ("name_update", "\"myname\", \"new-value\"")
-        + HelpExampleRpc ("name_update", "\"myname\", \"new-value\"")
+          HelpExampleCli ("updatename", "\"myname\", \"new-value\"")
+        + HelpExampleRpc ("updatename", "\"myname\", \"new-value\"")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -773,7 +773,7 @@ name_update ()
      are, then we build upon the last one to get a valid chain.  If there
      are none, then we look up the last outpoint from the name database
      instead. */
-  // TODO: Use name_show for this instead.
+  // TODO: Use getname for this instead.
 
   const unsigned chainLimit = gArgs.GetIntArg ("-limitnamechains",
                                                DEFAULT_NAME_CHAIN_LIMIT);
@@ -837,7 +837,7 @@ name_update ()
 
   return txidVal;
 }
-  );
+    };
 }
 
 /* ************************************************************************** */

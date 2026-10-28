@@ -48,7 +48,7 @@ void addOwnershipInfo (const CScript& addr,
 /**
  * Decodes a name given through the RPC interface and throws a
  * JSONRPCError if it is invalid for the requested encoding.  The encoding
- * is extracted from the options object if it is there with the "nameEncoding"
+ * is extracted from the options object if it is there with the "name_encoding"
  * key, or else the configured default name encoding it used.
  */
 valtype DecodeNameFromRPCOrThrow (const UniValue& val, const UniValue& opt);
@@ -56,7 +56,7 @@ valtype DecodeNameFromRPCOrThrow (const UniValue& val, const UniValue& opt);
 /**
  * Decodes a value given through the RPC interface and throws an error if it
  * is invalid.  This is the same as DecodeNameFromRPCOrThrow, except that it
- * extracts the "valueEncoding" from the options and uses the default encoding
+ * extracts the "value_encoding" from the options and uses the default encoding
  * for values instead of names.
  */
 valtype DecodeValueFromRPCOrThrow (const UniValue& val, const UniValue& opt);

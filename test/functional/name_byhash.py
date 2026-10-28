@@ -27,7 +27,7 @@ class NameByHashTest (NameTestFramework):
     nameHex = name.encode ("ascii").hex ()
     singleHash = hashlib.new ("sha256", name.encode ("ascii")).digest ()
     doubleHashHex = hashlib.new ("sha256", singleHash).hexdigest ()
-    byHashOptions = {"nameEncoding": "hex", "byHash": "sha256d"}
+    by_hashOptions = {"name_encoding": "hex", "by_hash": "sha256d"}
 
     # Start by setting up a test name.
     new = node.name_new (name)
@@ -36,13 +36,13 @@ class NameByHashTest (NameTestFramework):
     self.generate (node, 5)
 
     # Check looking up "direct".
-    res = node.name_show (name, {"byHash": "direct"})
+    res = node.name_show (name, {"by_hash": "direct"})
     assert_equal (res["name"], name)
     assert_equal (res["value"], "value")
 
     # -namehashindex is not enabled yet.
     assert_raises_rpc_error (-1, 'namehashindex is not enabled',
-                             node.name_show, doubleHashHex, byHashOptions)
+                             node.name_show, doubleHashHex, by_hashOptions)
     assert_equal (node.getindexinfo ("namehash"), {})
 
     # Restart the node and enable indexing.
@@ -57,22 +57,22 @@ class NameByHashTest (NameTestFramework):
     })
 
     # Now the lookup by hash should work.
-    res = node.name_show (doubleHashHex, byHashOptions)
+    res = node.name_show (doubleHashHex, by_hashOptions)
     assert_equal (res["name"], nameHex)
     assert_equal (res["value"], "value")
-    res = node.name_history (doubleHashHex, byHashOptions)
+    res = node.name_history (doubleHashHex, by_hashOptions)
     assert_equal (len (res), 1)
     assert_equal (res[0]["name"], nameHex)
 
     # Unknown name by hash.
     assert_raises_rpc_error (-4, "name hash not found",
-                             node.name_show, "42" * 32, byHashOptions)
+                             node.name_show, "42" * 32, by_hashOptions)
 
     # General errors with the parameters.
-    assert_raises_rpc_error (-8, "Invalid value for byHash",
-                             node.name_show, doubleHashHex, {"byHash": "foo"})
+    assert_raises_rpc_error (-8, "Invalid value for by_hash",
+                             node.name_show, doubleHashHex, {"by_hash": "foo"})
     assert_raises_rpc_error (-8, "must be 32 bytes long",
-                             node.name_show, "abcd", {"byHash": "sha256d"})
+                             node.name_show, "abcd", {"by_hash": "sha256d"})
 
 
 if __name__ == '__main__':

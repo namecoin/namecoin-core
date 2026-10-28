@@ -46,7 +46,7 @@ class NameIsMineTest (NameTestFramework):
     self.firstupdateName (1, "d/b", newB, "value")
     self.generate (self.node, 5)
     otherAddr = self.nodes[0].getnewaddress ()
-    self.node.name_update ("d/b", "new value", {"destAddress": otherAddr})
+    self.node.name_update ("d/b", "new value", {"dest_address": otherAddr})
     self.generate (self.node, 1)
     self.node.name_update ("d/a", "new value")
 

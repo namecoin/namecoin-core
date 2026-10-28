@@ -148,7 +148,7 @@ class NameMultisigTest (NameTestFramework):
     # Register a new name to that address.
     new = self.nodes[0].name_new ("name")
     self.generate (self.nodes[0], 10)
-    self.firstupdateName (0, "name", new, "value", {"destAddress": p2sh})
+    self.firstupdateName (0, "name", new, "value", {"dest_address": p2sh})
     self.generate (self.nodes[0], 5)
     self.sync_blocks ()
     data = self.checkName (0, "name", "value", None, False)

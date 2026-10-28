@@ -129,7 +129,7 @@ class NameSegwitTest (NameTestFramework):
     value = "{}"
     new = self.node.name_new (name)
     self.generate (self.node, 10)
-    self.firstupdateName (0, name, new, value, {"destAddress": addr})
+    self.firstupdateName (0, name, new, value, {"dest_address": addr})
     self.generate (self.node, 5)
     self.checkNameValueAddr (name, value, addr)
 
@@ -154,7 +154,7 @@ class NameSegwitTest (NameTestFramework):
     self.generate (self.node, 100)
     new = self.node.name_new (name)
     self.generate (self.node, 10)
-    self.firstupdateName (0, name, new, value, {"destAddress": addr})
+    self.firstupdateName (0, name, new, value, {"dest_address": addr})
     self.generate (self.node, 5)
     self.checkNameValueAddr (name, value, addr)
 
@@ -171,10 +171,10 @@ class NameSegwitTest (NameTestFramework):
     # though it is at a segwit address.  Also spending from P2SH-segwit
     # should work fine.
     addrP2SH = self.node.getnewaddress ("test", "p2sh-segwit")
-    self.node.name_update (name, "value 2", {"destAddress": addrP2SH})
+    self.node.name_update (name, "value 2", {"dest_address": addrP2SH})
     self.generate (self.node, 1)
     self.checkNameValueAddr (name, "value 2", addrP2SH)
-    self.node.name_update (name, "value 3", {"destAddress": addr})
+    self.node.name_update (name, "value 3", {"dest_address": addr})
     self.generate (self.node, 1)
     self.checkNameValueAddr (name, "value 3", addr)
 

@@ -470,7 +470,7 @@ CoinsResult AvailableCoins(const CWallet& wallet,
             if (params.name_max_depth < 0)
                 continue;
 
-            /* name_new's don't expire, but all other outputs become
+            /* preregistername's don't expire, but all other outputs become
                unspendable if too deep in the chain.  */
             if (nameOp.isAnyUpdate () && nDepth > params.name_max_depth)
                 continue;

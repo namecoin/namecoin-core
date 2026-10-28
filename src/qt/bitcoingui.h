@@ -136,7 +136,7 @@ private:
     QAction* overviewAction = nullptr;
     QAction* historyAction = nullptr;
     QAction* quitAction = nullptr;
-    QAction* sendCoinsAction = nullptr;
+    QAction* send_coinsAction = nullptr;
     QAction* usedSendingAddressesAction = nullptr;
     QAction* usedReceivingAddressesAction = nullptr;
     QAction* buyNamesAction = nullptr;

@@ -63,7 +63,7 @@ private:
     OverviewPage *overviewPage;
     QWidget *transactionsPage;
     ReceiveCoinsDialog *receiveCoinsPage;
-    SendCoinsDialog *sendCoinsPage;
+    SendCoinsDialog *send_coinsPage;
     BuyNamesPage *buyNamesPage;
     ManageNamesPage *manageNamesPage;
     AddressBookPage *usedSendingAddressesPage;

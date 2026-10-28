@@ -71,7 +71,7 @@ EncodingFromOptionsJson (const UniValue& options, const std::string& field,
 
 /**
  * Utility routine to construct a "name info" object to return.  This is used
- * for name_show and also name_list.
+ * for getname and also listnames.
  */
 UniValue
 getNameInfo (const UniValue& options,
@@ -80,10 +80,10 @@ getNameInfo (const UniValue& options,
 {
   UniValue obj(UniValue::VOBJ);
   AddEncodedNameToUniv (obj, "name", name,
-                        EncodingFromOptionsJson (options, "nameEncoding",
+                        EncodingFromOptionsJson (options, "name_encoding",
                                                  ConfiguredNameEncoding ()));
   AddEncodedNameToUniv (obj, "value", value,
-                        EncodingFromOptionsJson (options, "valueEncoding",
+                        EncodingFromOptionsJson (options, "value_encoding",
                                                  ConfiguredValueEncoding ()));
   obj.pushKV ("txid", outp.hash.GetHex ());
   obj.pushKV ("vout", static_cast<int> (outp.n));
@@ -178,14 +178,14 @@ DecodeNameValueFromRPCOrThrow (const UniValue& val, const UniValue& opt,
 valtype
 DecodeNameFromRPCOrThrow (const UniValue& val, const UniValue& opt)
 {
-  return DecodeNameValueFromRPCOrThrow (val, opt, "nameEncoding",
+  return DecodeNameValueFromRPCOrThrow (val, opt, "name_encoding",
                                         ConfiguredNameEncoding ());
 }
 
 valtype
 DecodeValueFromRPCOrThrow (const UniValue& val, const UniValue& opt)
 {
-  return DecodeNameValueFromRPCOrThrow (val, opt, "valueEncoding",
+  return DecodeNameValueFromRPCOrThrow (val, opt, "value_encoding",
                                         ConfiguredValueEncoding ());
 }
 
@@ -193,7 +193,7 @@ namespace
 {
 
 /**
- * Decodes the identifier for a name lookup according to the nameEncoding,
+ * Decodes the identifier for a name lookup according to the name_encoding,
  * and also looks up the preimage if we look up by hash.
  */
 valtype
@@ -203,15 +203,15 @@ GetNameForLookup (const UniValue& val, const UniValue& opt)
 
   RPCTypeCheckObj (opt,
     {
-      {"byHash", UniValueType (UniValue::VSTR)},
+      {"by_hash", UniValueType (UniValue::VSTR)},
     },
     true, false);
 
-  if (!opt.exists ("byHash"))
+  if (!opt.exists ("by_hash"))
     return identifier;
 
-  const std::string byHashType = opt["byHash"].get_str ();
-  if (byHashType == "direct")
+  const std::string by_hashType = opt["by_hash"].get_str ();
+  if (by_hashType == "direct")
     return identifier;
 
   if (g_name_hash_index == nullptr)
@@ -219,10 +219,10 @@ GetNameForLookup (const UniValue& val, const UniValue& opt)
   if (!g_name_hash_index->BlockUntilSyncedToCurrentChain ())
     throw std::runtime_error ("The name-hash index is not caught up yet");
 
-  if (byHashType != "sha256d")
+  if (by_hashType != "sha256d")
     {
       std::ostringstream msg;
-      msg << "Invalid value for byHash: " << byHashType;
+      msg << "Invalid value for by_hash: " << by_hashType;
       throw JSONRPCError (RPC_INVALID_PARAMETER, msg.str ());
     }
 
@@ -353,8 +353,8 @@ const RPCResult NameOpResult{RPCResult::Type::OBJ, "nameOp", optional,
     "The encoded name-operation (if the script has one)",
     {
       {RPCResult::Type::STR, "op", "The type of operation"},
-      {RPCResult::Type::STR_HEX, "hash", optional, "Hash value for name_new"},
-      {RPCResult::Type::STR_HEX, "rand", optional, "Seed value for name_firstupdate"},
+      {RPCResult::Type::STR_HEX, "hash", optional, "Hash value for preregistername"},
+      {RPCResult::Type::STR_HEX, "salt", optional, "Seed value for registername"},
       {RPCResult::Type::STR, "name", optional, "Name for updates"},
       {RPCResult::Type::STR, "name_error", optional, "Encoding error for the name, if any"},
       {RPCResult::Type::STR, "name_encoding", optional, "Encoding of the name"},
@@ -376,7 +376,7 @@ NameInfoHelp::NameInfoHelp ()
   withField ({RPCResult::Type::STR, "value_error", optional,
               "replaces \"value\" in case there is an error"});
 
-  withField ({RPCResult::Type::STR_HEX, "txid", "the name's last update tx"});
+  withField ({RPCResult::Type::STR_HEX, "txid", "the name's last update txid"});
   withField ({RPCResult::Type::NUM, "vout",
               "the index of the name output in the last update"});
   withField ({RPCResult::Type::STR, "address", "the address holding the name"});
@@ -444,10 +444,10 @@ NameOptionsHelp::withArg (const std::string& name, const RPCArg::Type type,
 NameOptionsHelp&
 NameOptionsHelp::withWriteOptions ()
 {
-  withArg ("destAddress", RPCArg::Type::STR,
+  withArg ("dest_address", RPCArg::Type::STR,
            "The address to send the name output to");
 
-  withArg ("sendCoins", RPCArg::Type::OBJ_USER_KEYS,
+  withArg ("send_coins", RPCArg::Type::OBJ_USER_KEYS,
            "Addresses to which coins should be sent additionally",
            {
               {"address", RPCArg::Type::AMOUNT, RPCArg::Optional::NO,
@@ -461,7 +461,7 @@ NameOptionsHelp::withWriteOptions ()
 NameOptionsHelp&
 NameOptionsHelp::withNameEncoding ()
 {
-  withArg ("nameEncoding", RPCArg::Type::STR,
+  withArg ("name_encoding", RPCArg::Type::STR,
            "Encoding (\"ascii\", \"utf8\" or \"hex\") of the name argument");
   return *this;
 }
@@ -469,7 +469,7 @@ NameOptionsHelp::withNameEncoding ()
 NameOptionsHelp&
 NameOptionsHelp::withValueEncoding ()
 {
-  withArg ("valueEncoding", RPCArg::Type::STR,
+  withArg ("value_encoding", RPCArg::Type::STR,
            "Encoding (\"ascii\", \"utf8\" or \"hex\") of the value argument");
   return *this;
 }
@@ -477,7 +477,7 @@ NameOptionsHelp::withValueEncoding ()
 NameOptionsHelp&
 NameOptionsHelp::withByHash ()
 {
-  withArg ("byHash", RPCArg::Type::STR,
+  withArg ("by_hash", RPCArg::Type::STR,
            "Interpret \"name\" as hash (\"direct\" or \"sha256d\")");
   return *this;
 }
@@ -495,86 +495,86 @@ namespace
 {
 
 RPCMethod
-name_show ()
+getname ()
 {
   NameOptionsHelp optHelp;
   optHelp
       .withNameEncoding ()
       .withValueEncoding ()
       .withByHash ()
-      .withArg ("allowExpired", RPCArg::Type::BOOL, "depends on -allowexpired",
+      .withArg ("allow_expired", RPCArg::Type::BOOL, "depends on -allowexpired",
                 "Whether to throw error for expired names");
 
-  return RPCMethod ("name_show",
+  return RPCMethod {"getname",
       "Looks up the current data for the given name.  Fails if the name doesn't exist.\n",
       {
           {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name to query for"},
-          optHelp.buildRpcArg (),
-      },
-      NameInfoHelp ()
-        .withExpiration ()
-        .finish (),
-      RPCExamples {
-          HelpExampleCli ("name_show", "\"myname\"")
-        + HelpExampleCli ("name_show", R"("myname" '{"allowExpired": false}')")
-        + HelpExampleRpc ("name_show", "\"myname\"")
-      },
-      [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
-{
-  auto& chainman = EnsureChainman (EnsureAnyNodeContext (request));
+            optHelp.buildRpcArg (),
+          },
+            NameInfoHelp ()
+                .withExpiration ()
+                .finish (),
+            RPCExamples {
+                HelpExampleCli ("getname", "\"myname\"")
+                + HelpExampleCli ("getname", R"("myname" '{"allow_expired": false}')")
+                + HelpExampleRpc ("getname", "\"myname\"")
+            },
+            [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
+        {
+        auto& chainman = EnsureChainman (EnsureAnyNodeContext (request));
 
-  if (chainman.IsInitialBlockDownload ())
-    throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD,
-                       "Namecoin is downloading blocks...");
+        if (chainman.IsInitialBlockDownload ())
+            throw JSONRPCError(RPC_CLIENT_IN_INITIAL_DOWNLOAD,
+                            "Namecoin is downloading blocks...");
 
-  UniValue options(UniValue::VOBJ);
-  if (request.params.size () >= 2)
-    options = request.params[1].get_obj ();
+        UniValue options(UniValue::VOBJ);
+        if (request.params.size () >= 2)
+            options = request.params[1].get_obj ();
 
-  /* Parse and interpret the name_show-specific options.  */
-  RPCTypeCheckObj(options,
-    {
-      {"allowExpired", UniValueType(UniValue::VBOOL)},
-    },
-    true, false);
+        /* Parse and interpret the getname-specific options.  */
+        RPCTypeCheckObj(options,
+            {
+            {"allow_expired", UniValueType(UniValue::VBOOL)},
+            },
+            true, false);
 
-  bool allow_expired = gArgs.GetBoolArg("-allowexpired", DEFAULT_ALLOWEXPIRED);
-  if (options.exists("allowExpired"))
-    allow_expired = options["allowExpired"].get_bool();
+        bool allow_expired = gArgs.GetBoolArg("-allowexpired", DEFAULT_ALLOWEXPIRED);
+        if (options.exists("allow_expired"))
+            allow_expired = options["allow_expired"].get_bool();
 
-  const valtype name = GetNameForLookup (request.params[0], options);
+        const valtype name = GetNameForLookup (request.params[0], options);
 
-  CNameData data;
-  {
-    LOCK (cs_main);
-    if (!chainman.ActiveChainstate ().CoinsTip ().GetName (name, data))
-      {
-        std::ostringstream msg;
-        msg << "name never existed: " << EncodeNameForMessage (name);
-        throw JSONRPCError (RPC_WALLET_ERROR, msg.str ());
-      }
-  }
+        CNameData data;
+        {
+            LOCK (cs_main);
+            if (!chainman.ActiveChainstate ().CoinsTip ().GetName (name, data))
+            {
+                std::ostringstream msg;
+                msg << "name never existed: " << EncodeNameForMessage (name);
+                throw JSONRPCError (RPC_WALLET_ERROR, msg.str ());
+            }
+        }
 
-  MaybeWalletForRequest wallet(request);
-  LOCK2 (wallet.getLock (), cs_main);
-  UniValue name_object = getNameInfo(chainman, options, name, data, wallet);
-  assert(!name_object["expired"].isNull());
-  const bool is_expired = name_object["expired"].get_bool();
-  if (is_expired && !allow_expired)
-    {
-      std::ostringstream msg;
-      msg << "name expired: " << EncodeNameForMessage(name);
-      throw JSONRPCError(RPC_WALLET_ERROR, msg.str());
-    }
-  return name_object;
-}
-  );
+        MaybeWalletForRequest wallet(request);
+        LOCK2 (wallet.getLock (), cs_main);
+        UniValue name_object = getNameInfo(chainman, options, name, data, wallet);
+        assert(!name_object["expired"].isNull());
+        const bool is_expired = name_object["expired"].get_bool();
+        if (is_expired && !allow_expired)
+            {
+            std::ostringstream msg;
+            msg << "name expired: " << EncodeNameForMessage(name);
+            throw JSONRPCError(RPC_WALLET_ERROR, msg.str());
+            }
+        return name_object;
+        }
+    };
 }
 
 /* ************************************************************************** */
 
 RPCMethod
-name_history ()
+getnamehistory ()
 {
   NameOptionsHelp optHelp;
   optHelp
@@ -582,7 +582,7 @@ name_history ()
       .withValueEncoding ()
       .withByHash ();
 
-  return RPCMethod ("name_history",
+  return RPCMethod {"getnamehistory",
       "Looks up the current and all past data for the given name.  -namehistory must be enabled.\n",
       {
           {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name to query for"},
@@ -596,8 +596,8 @@ name_history ()
           }
       },
       RPCExamples {
-          HelpExampleCli ("name_history", "\"myname\"")
-        + HelpExampleRpc ("name_history", "\"myname\"")
+          HelpExampleCli ("getnamehistory", "\"myname\"")
+        + HelpExampleRpc ("getnamehistory", "\"myname\"")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -644,28 +644,28 @@ name_history ()
 
   return res;
 }
-  );
+    };
 }
 
 /* ************************************************************************** */
 
 RPCMethod
-name_scan ()
+scannameset ()
 {
   NameOptionsHelp optHelp;
   optHelp
       .withNameEncoding ()
       .withValueEncoding ()
-      .withArg ("minConf", RPCArg::Type::NUM, "1",
+      .withArg ("min_conf", RPCArg::Type::NUM, "1",
                 "Minimum number of confirmations")
-      .withArg ("maxConf", RPCArg::Type::NUM,
+      .withArg ("max_conf", RPCArg::Type::NUM,
                 "Maximum number of confirmations")
       .withArg ("prefix", RPCArg::Type::STR,
                 "Filter for names with the given prefix")
       .withArg ("regexp", RPCArg::Type::STR,
                 "Filter for names matching the regexp");
 
-  return RPCMethod ("name_scan",
+  return RPCMethod {"scannameset",
       "Lists names in the database.\n",
       {
           {"start", RPCArg::Type::STR, RPCArg::Default{""}, "Skip initially to this name"},
@@ -680,10 +680,10 @@ name_scan ()
           }
       },
       RPCExamples {
-          HelpExampleCli ("name_scan", "")
-        + HelpExampleCli ("name_scan", "\"d/abc\"")
-        + HelpExampleCli ("name_scan", "\"d/abc\" 10")
-        + HelpExampleRpc ("name_scan", "\"d/abc\"")
+          HelpExampleCli ("scannameset", "")
+        + HelpExampleCli ("scannameset", "\"d/abc\"")
+        + HelpExampleCli ("scannameset", "\"d/abc\" 10")
+        + HelpExampleRpc ("scannameset", "\"d/abc\"")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -705,29 +705,29 @@ name_scan ()
   if (!request.params[1].isNull ())
     count = request.params[1].getInt<int> ();
 
-  /* Parse and interpret the name_scan-specific options.  */
+  /* Parse and interpret the scannameset-specific options.  */
   RPCTypeCheckObj (options,
     {
-      {"minConf", UniValueType (UniValue::VNUM)},
-      {"maxConf", UniValueType (UniValue::VNUM)},
+      {"min_conf", UniValueType (UniValue::VNUM)},
+      {"max_conf", UniValueType (UniValue::VNUM)},
       {"prefix", UniValueType (UniValue::VSTR)},
       {"regexp", UniValueType (UniValue::VSTR)},
     },
     true, false);
 
-  int minConf = 1;
-  if (options.exists ("minConf"))
-    minConf = options["minConf"].getInt<int> ();
-  if (minConf < 1)
-    throw JSONRPCError (RPC_INVALID_PARAMETER, "minConf must be >= 1");
+  int min_conf = 1;
+  if (options.exists ("min_conf"))
+    min_conf = options["min_conf"].getInt<int> ();
+  if (min_conf < 1)
+    throw JSONRPCError (RPC_INVALID_PARAMETER, "min_conf must be >= 1");
 
-  int maxConf = -1;
-  if (options.exists ("maxConf"))
+  int max_conf = -1;
+  if (options.exists ("max_conf"))
     {
-      maxConf = options["maxConf"].getInt<int> ();
-      if (maxConf < 0)
+      max_conf = options["max_conf"].getInt<int> ();
+      if (max_conf < 0)
         throw JSONRPCError (RPC_INVALID_PARAMETER,
-                            "maxConf must not be negative");
+                            "max_conf must not be negative");
     }
 
   valtype prefix;
@@ -750,10 +750,10 @@ name_scan ()
   MaybeWalletForRequest wallet(request);
   LOCK2 (wallet.getLock (), cs_main);
 
-  const int maxHeight = chainman.ActiveHeight () - minConf + 1;
+  const int maxHeight = chainman.ActiveHeight () - min_conf + 1;
   int minHeight = -1;
-  if (maxConf >= 0)
-    minHeight = chainman.ActiveHeight () - maxConf + 1;
+  if (max_conf >= 0)
+    minHeight = chainman.ActiveHeight () - max_conf + 1;
 
   valtype name;
   CNameData data;
@@ -793,20 +793,20 @@ name_scan ()
 
   return res;
 }
-  );
+    };
 }
 
 /* ************************************************************************** */
 
 RPCMethod
-name_pending ()
+getmempoolname ()
 {
   NameOptionsHelp optHelp;
   optHelp
       .withNameEncoding ()
       .withValueEncoding ();
 
-  return RPCMethod ("name_pending",
+  return RPCMethod {"getmempoolname",
       "Lists unconfirmed name operations in the mempool.\n"
       "\nIf a name is given, only check for operations on this name.\n",
       {
@@ -821,9 +821,9 @@ name_pending ()
           }
       },
       RPCExamples {
-          HelpExampleCli ("name_pending", "")
-        + HelpExampleCli ("name_pending", "\"d/domob\"")
-        + HelpExampleRpc ("name_pending", "")
+          HelpExampleCli ("getmempoolname", "")
+        + HelpExampleCli ("getmempoolname", "\"d/domob\"")
+        + HelpExampleRpc ("getmempoolname", "")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -843,13 +843,13 @@ name_pending ()
   UniValue arr(UniValue::VARR);
   for (const CTxMemPoolEntry& entry : mempool.entryAll ())
     {
-      const auto& tx = entry.GetTx ();
-      if (!tx.IsNamecoin ())
+      const auto& txid = entry.GetTx ();
+      if (!txid.IsNamecoin ())
         continue;
 
-      for (size_t n = 0; n < tx.vout.size (); ++n)
+      for (size_t n = 0; n < txid.vout.size (); ++n)
         {
-          const auto& txOut = tx.vout[n];
+          const auto& txOut = txid.vout[n];
           const CNameScript op(txOut.scriptPubKey);
           if (!op.isNameOp () || !op.isAnyUpdate ())
             continue;
@@ -858,16 +858,16 @@ name_pending ()
 
           UniValue obj = getNameInfo (options,
                                       op.getOpName (), op.getOpValue (),
-                                      COutPoint (tx.GetHash (), n),
+                                      COutPoint (txid.GetHash (), n),
                                       op.getAddress ());
           addOwnershipInfo (op.getAddress (), wallet, obj);
           switch (op.getNameOp ())
             {
             case OP_NAME_FIRSTUPDATE:
-              obj.pushKV ("op", "name_firstupdate");
+              obj.pushKV ("op", "registername");
               break;
             case OP_NAME_UPDATE:
-              obj.pushKV ("op", "name_update");
+              obj.pushKV ("op", "updatename");
               break;
             default:
               assert (false);
@@ -879,7 +879,7 @@ name_pending ()
 
   return arr;
 }
-  );
+    };
 }
 
 /* ************************************************************************** */
@@ -892,7 +892,7 @@ namespace
  * CMutableTransaction.  This is used to share the code between the two
  * RPC methods.
  *
- * If a name_new is created and a rand value chosen, it will be placed
+ * If a preregistername is created and a salt value chosen, it will be placed
  * into the JSON output "result" already.
  */
 void
@@ -914,53 +914,53 @@ PerformNameRawtx (const unsigned nOut, const UniValue& nameOp,
 
   /* namerawtransaction does not have an options argument.  This would just
      make the already long list of arguments longer.  Instead of using
-     namerawtransaction, namecoin-tx can be used anyway to create name
+     namerawtransaction, namecoin-txid can be used anyway to create name
      operations with arbitrary hex data.  */
   const UniValue NO_OPTIONS(UniValue::VOBJ);
 
-  if (op == "name_new")
+  if (op == "preregistername")
     {
       RPCTypeCheckObj (nameOp,
         {
           {"name", UniValueType (UniValue::VSTR)},
-          {"rand", UniValueType (UniValue::VSTR)},
+          {"salt", UniValueType (UniValue::VSTR)},
         },
         true);
 
-      valtype rand;
-      if (nameOp.exists ("rand"))
+      valtype salt;
+      if (nameOp.exists ("salt"))
         {
-          const std::string randStr = nameOp.find_value ("rand").get_str ();
+          const std::string randStr = nameOp.find_value ("salt").get_str ();
           if (!IsHex (randStr))
-            throw JSONRPCError (RPC_DESERIALIZATION_ERROR, "rand must be hex");
-          rand = ParseHex (randStr);
+            throw JSONRPCError (RPC_DESERIALIZATION_ERROR, "salt must be hex");
+          salt = ParseHex (randStr);
         }
       else
         {
-          rand.resize (20);
-          GetRandBytes (rand);
+          salt.resize (20);
+          GetRandBytes (salt);
         }
 
       const valtype name
           = DecodeNameFromRPCOrThrow (nameOp.find_value ("name"), NO_OPTIONS);
 
-      script = CNameScript::buildNameNew (script, name, rand);
-      result.pushKV ("rand", HexStr (rand));
+      script = CNameScript::buildNameNew (script, name, salt);
+      result.pushKV ("salt", HexStr (salt));
     }
-  else if (op == "name_firstupdate")
+  else if (op == "registername")
     {
       RPCTypeCheckObj (nameOp,
         {
           {"name", UniValueType (UniValue::VSTR)},
           {"value", UniValueType (UniValue::VSTR)},
-          {"rand", UniValueType (UniValue::VSTR)},
+          {"salt", UniValueType (UniValue::VSTR)},
         }
       );
 
-      const std::string randStr = nameOp.find_value ("rand").get_str ();
+      const std::string randStr = nameOp.find_value ("salt").get_str ();
       if (!IsHex (randStr))
-        throw JSONRPCError (RPC_DESERIALIZATION_ERROR, "rand must be hex");
-      const valtype rand = ParseHex (randStr);
+        throw JSONRPCError (RPC_DESERIALIZATION_ERROR, "salt must be hex");
+      const valtype salt = ParseHex (randStr);
 
       const valtype name
           = DecodeNameFromRPCOrThrow (nameOp.find_value ("name"), NO_OPTIONS);
@@ -968,9 +968,9 @@ PerformNameRawtx (const unsigned nOut, const UniValue& nameOp,
           = DecodeValueFromRPCOrThrow (nameOp.find_value ("value"),
                                        NO_OPTIONS);
 
-      script = CNameScript::buildNameFirstupdate (script, name, value, rand);
+      script = CNameScript::buildNameFirstupdate (script, name, value, salt);
     }
-  else if (op == "name_update")
+  else if (op == "updatename")
     {
       RPCTypeCheckObj (nameOp,
         {
@@ -1004,24 +1004,24 @@ namerawtransaction ()
           {"vout", RPCArg::Type::NUM, RPCArg::Optional::NO, "The vout of the desired name output"},
           {"nameop", RPCArg::Type::OBJ, RPCArg::Optional::NO, "The name operation to create",
               {
-                  {"op", RPCArg::Type::STR, RPCArg::Optional::NO, "The operation to perform, can be \"name_new\", \"name_firstupdate\" and \"name_update\""},
+                  {"op", RPCArg::Type::STR, RPCArg::Optional::NO, "The operation to perform, can be \"preregistername\", \"registername\" and \"updatename\""},
                   {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name to operate on"},
                   {"value", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "The new value for the name"},
-                  {"rand", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "The nonce value to use for registrations"},
+                  {"salt", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "The nonce value to use for registrations"},
               }
           },
       },
       RPCResult {RPCResult::Type::OBJ, "", "",
           {
               {RPCResult::Type::STR_HEX, "hex", "Hex string of the updated transaction"},
-              {RPCResult::Type::STR_HEX, "rand", /* optional */ true, "If this is a name_new, the nonce used to create it"},
+              {RPCResult::Type::STR_HEX, "salt", /* optional */ true, "If this is a preregistername, the nonce used to create it"},
           },
       },
       RPCExamples {
-          HelpExampleCli ("namerawtransaction", R"("raw tx hex" 1 "{\"op\":\"name_new\",\"name\":\"my-name\")")
-        + HelpExampleCli ("namerawtransaction", R"("raw tx hex" 1 "{\"op\":\"name_firstupdate\",\"name\":\"my-name\",\"value\":\"new value\",\"rand\":\"00112233\")")
-        + HelpExampleCli ("namerawtransaction", R"("raw tx hex" 1 "{\"op\":\"name_update\",\"name\":\"my-name\",\"value\":\"new value\")")
-        + HelpExampleRpc ("namerawtransaction", R"("raw tx hex", 1, {"op":"name_update","name":"my-name","value":"new value"})")
+          HelpExampleCli ("namerawtransaction", R"("raw txid hex" 1 "{\"op\":\"preregistername\",\"name\":\"my-name\")")
+        + HelpExampleCli ("namerawtransaction", R"("raw txid hex" 1 "{\"op\":\"registername\",\"name\":\"my-name\",\"value\":\"new value\",\"salt\":\"00112233\")")
+        + HelpExampleCli ("namerawtransaction", R"("raw txid hex" 1 "{\"op\":\"updatename\",\"name\":\"my-name\",\"value\":\"new value\")")
+        + HelpExampleRpc ("namerawtransaction", R"("raw txid hex", 1, {"op":"updatename","name":"my-name","value":"new value"})")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1051,24 +1051,24 @@ namepsbt ()
           {"vout", RPCArg::Type::NUM, RPCArg::Optional::NO, "The vout of the desired name output"},
           {"nameop", RPCArg::Type::OBJ, RPCArg::Optional::NO, "The name operation to create",
               {
-                  {"op", RPCArg::Type::STR, RPCArg::Optional::NO, "The operation to perform, can be \"name_new\", \"name_firstupdate\" and \"name_update\""},
+                  {"op", RPCArg::Type::STR, RPCArg::Optional::NO, "The operation to perform, can be \"preregistername\", \"registername\" and \"updatename\""},
                   {"name", RPCArg::Type::STR, RPCArg::Optional::NO, "The name to operate on"},
                   {"value", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "The new value for the name"},
-                  {"rand", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "The nonce value to use for registrations"},
+                  {"salt", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "The nonce value to use for registrations"},
               }
           },
       },
       RPCResult {RPCResult::Type::OBJ, "", "",
           {
               {RPCResult::Type::STR_HEX, "psbt", "The serialised, updated PSBT"},
-              {RPCResult::Type::STR_HEX, "rand", /* optional */ true, "If this is a name_new, the nonce used to create it"},
+              {RPCResult::Type::STR_HEX, "salt", /* optional */ true, "If this is a preregistername, the nonce used to create it"},
           },
       },
       RPCExamples {
-          HelpExampleCli ("namepsbt", R"("psbt" 1 "{\"op\":\"name_new\",\"name\":\"my-name\")")
-        + HelpExampleCli ("namepsbt", R"("psbt" 1 "{\"op\":\"name_firstupdate\",\"name\":\"my-name\",\"value\":\"new value\",\"rand\":\"00112233\")")
-        + HelpExampleCli ("namepsbt", R"("psbt" 1 "{\"op\":\"name_update\",\"name\":\"my-name\",\"value\":\"new value\")")
-        + HelpExampleRpc ("namepsbt", R"("psbt", 1, {"op":"name_update","name":"my-name","value":"new value"})")
+          HelpExampleCli ("namepsbt", R"("psbt" 1 "{\"op\":\"preregistername\",\"name\":\"my-name\")")
+        + HelpExampleCli ("namepsbt", R"("psbt" 1 "{\"op\":\"registername\",\"name\":\"my-name\",\"value\":\"new value\",\"salt\":\"00112233\")")
+        + HelpExampleCli ("namepsbt", R"("psbt" 1 "{\"op\":\"updatename\",\"name\":\"my-name\",\"value\":\"new value\")")
+        + HelpExampleRpc ("namepsbt", R"("psbt", 1, {"op":"updatename","name":"my-name","value":"new value"})")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1099,16 +1099,16 @@ namepsbt ()
 /* ************************************************************************** */
 
 RPCMethod
-name_checkdb ()
+verifynamedb ()
 {
-  return RPCMethod ("name_checkdb",
+  return RPCMethod ("verifynamedb",
       "Validates the name DB's consistency.\n"
       "\nRoughly between blocks 139,000 and 180,000, this call is expected to fail due to the historic 'name stealing' bug.\n",
       {},
       RPCResult {RPCResult::Type::BOOL, "", "whether the state is valid"},
       RPCExamples {
-          HelpExampleCli ("name_checkdb", "")
-        + HelpExampleRpc ("name_checkdb", "")
+          HelpExampleCli ("verifynamedb", "")
+        + HelpExampleRpc ("verifynamedb", "")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
 {
@@ -1132,11 +1132,11 @@ std::span<const CRPCCommand> GetNameRPCCommands()
 static const CRPCCommand commands[] =
 { //  category               actor (function)
   //  ---------------------  -----------------------
-    { "names",               &name_show,               },
-    { "names",               &name_history,            },
-    { "names",               &name_scan,               },
-    { "names",               &name_pending,            },
-    { "names",               &name_checkdb,            },
+    { "names",               &getname,               },
+    { "names",               &getnamehistory,            },
+    { "names",               &scannameset,               },
+    { "names",               &getmempoolname,            },
+    { "names",               &verifynamedb,            },
     { "rawtransactions",     &namerawtransaction,      },
     { "rawtransactions",     &namepsbt,                },
 };

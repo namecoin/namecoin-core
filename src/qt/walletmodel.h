@@ -55,7 +55,7 @@ public:
     explicit WalletModel(std::unique_ptr<interfaces::Wallet> wallet, ClientModel& client_model, const PlatformStyle *platformStyle, QObject *parent = nullptr);
     ~WalletModel();
 
-    enum StatusCode // Returned by sendCoins
+    enum StatusCode // Returned by send_coins
     {
         OK,
         InvalidAmount,
@@ -101,7 +101,7 @@ public:
     SendCoinsReturn prepareTransaction(WalletModelTransaction &transaction, const wallet::CCoinControl& coinControl);
 
     // Send coins to a list of recipients
-    void sendCoins(WalletModelTransaction& transaction);
+    void send_coins(WalletModelTransaction& transaction);
 
     // Wallet encryption
     bool setWalletEncrypted(const SecureString& passphrase);

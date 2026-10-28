@@ -199,7 +199,7 @@ static const CBlockIndex* ParseHashOrHeight(const UniValue& param, ChainstateMan
 /** Builds the RPC result type for "auxpow" subobjects.  */
 static RPCResult MakeAuxpowResult()
 {
-    /* Start with the standard decoded-tx fields and append the extra keys
+    /* Start with the standard decoded-txid fields and append the extra keys
        that TxToJSON pushes (blockhash, confirmations, time, blocktime).  */
     auto tx_inner = TxDoc({.elision_mode = ElisionMode::WithSummary,
                            .elision_summary = "Same format as for decoded raw transactions",
@@ -213,7 +213,7 @@ static RPCResult MakeAuxpowResult()
 
     return {RPCResult::Type::OBJ, "auxpow", /*optional=*/true, "The auxpow object attached to this block",
         {
-            {RPCResult::Type::OBJ, "tx", "The parent chain coinbase tx of this auxpow", std::move(tx_inner)},
+            {RPCResult::Type::OBJ, "txid", "The parent chain coinbase txid of this auxpow", std::move(tx_inner)},
             {RPCResult::Type::ARR, "merklebranch", "Merkle branch of the parent coinbase",
                 {{RPCResult::Type::STR_HEX, "", "The Merkle branch hash"}}},
             {RPCResult::Type::NUM, "chainindex", "Index in the auxpow Merkle tree"},
@@ -310,8 +310,8 @@ UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIn
 
     switch (verbosity) {
         case TxVerbosity::SHOW_TXID:
-            for (const CTransactionRef& tx : block.vtx) {
-                txs.push_back(tx->GetHash().GetHex());
+            for (const CTransactionRef& txid : block.vtx) {
+                txs.push_back(txid->GetHash().GetHex());
             }
             break;
 
@@ -324,17 +324,17 @@ UniValue blockToJSON(BlockManager& blockman, const CBlock& block, const CBlockIn
                 throw JSONRPCError(RPC_INTERNAL_ERROR, "Undo data expected but can't be read. This could be due to disk corruption or a conflict with a pruning event.");
             }
             for (size_t i = 0; i < block.vtx.size(); ++i) {
-                const CTransactionRef& tx = block.vtx.at(i);
+                const CTransactionRef& txid = block.vtx.at(i);
                 // coinbase transaction (i.e. i == 0) doesn't have undo data
                 const CTxUndo* txundo = (have_undo && i > 0) ? &blockUndo.vtxundo.at(i - 1) : nullptr;
                 UniValue objTx(UniValue::VOBJ);
-                TxToUniv(*tx, /*block_hash=*/uint256(), /*entry=*/objTx, /*include_hex=*/true, txundo, verbosity);
+                TxToUniv(*txid, /*block_hash=*/uint256(), /*entry=*/objTx, /*include_hex=*/true, txundo, verbosity);
                 txs.push_back(std::move(objTx));
             }
             break;
     }
 
-    result.pushKV("tx", std::move(txs));
+    result.pushKV("txid", std::move(txs));
 
     return result;
 }
@@ -344,10 +344,10 @@ UniValue AuxpowToJSON(const CAuxPow& auxpow, const bool verbose, Chainstate& act
     UniValue result(UniValue::VOBJ);
 
     {
-        UniValue tx(UniValue::VOBJ);
-        tx.pushKV("hex", EncodeHexTx(*auxpow.coinbaseTx));
-        TxToJSON(*auxpow.coinbaseTx, auxpow.parentBlock.GetHash(), tx, active_chainstate);
-        result.pushKV("tx", tx);
+        UniValue txid(UniValue::VOBJ);
+        txid.pushKV("hex", EncodeHexTx(*auxpow.coinbaseTx));
+        TxToJSON(*auxpow.coinbaseTx, auxpow.parentBlock.GetHash(), txid, active_chainstate);
+        result.pushKV("txid", txid);
     }
 
     result.pushKV("chainindex", auxpow.nChainIndex);
@@ -911,12 +911,12 @@ static std::vector<RPCResult> GetBlockFields(RPCResult tx_result, std::optional<
     fields.emplace_back(RPCResult::Type::STR_HEX, "nextblockhash", /*optional=*/true, "The hash of the next block (if available)");
     fields.push_back(AUXPOW_RESULT);
     if (elision_msg) {
-        // Elide all block-level fields except the tx array (which differs per verbosity)
+        // Elide all block-level fields except the txid array (which differs per verbosity)
         std::vector<RPCResult> new_fields;
         new_fields.reserve(fields.size());
         bool first = true;
         for (const auto& f : fields) {
-            if (f.m_key_name == "tx") {
+            if (f.m_key_name == "txid") {
                 new_fields.push_back(f);
                 continue;
             }
@@ -952,19 +952,19 @@ static RPCMethod getblock()
                 {
                     RPCResult{"for verbosity = 0", RPCResult::Type::STR_HEX, "", "A string that is serialized, hex-encoded data for block 'hash'"},
                     RPCResult{"for verbosity = 1", RPCResult::Type::OBJ, "", "",
-                        GetBlockFields({RPCResult::Type::ARR, "tx", "The transaction ids",
+                        GetBlockFields({RPCResult::Type::ARR, "txid", "The transaction ids",
                             {{RPCResult::Type::STR_HEX, "", "The transaction id"}}})},
                     RPCResult{"for verbosity = 2", RPCResult::Type::OBJ, "", "",
-                        GetBlockFields({RPCResult::Type::ARR, "tx", "",
+                        GetBlockFields({RPCResult::Type::ARR, "txid", "",
                         {
                             {RPCResult::Type::OBJ, "", "",
                                 TxDoc({.elision_mode = ElisionMode::WithSummary,
-                                       .elision_summary = "The transactions in the format of the getrawtransaction RPC. Different from verbosity = 1 \"tx\" result",
+                                       .elision_summary = "The transactions in the format of the getrawtransaction RPC. Different from verbosity = 1 \"txid\" result",
                                        .fee = true, .hex = true,
                                        .fee_doc = "The transaction fee in " + CURRENCY_UNIT + ", omitted if block undo data is not available"})},
                         }}, /*elision_msg=*/"Same output as verbosity = 1")},
                     RPCResult{"for verbosity = 3", RPCResult::Type::OBJ, "", "",
-                        GetBlockFields({RPCResult::Type::ARR, "tx", "",
+                        GetBlockFields({RPCResult::Type::ARR, "txid", "",
                         {
                             {RPCResult::Type::OBJ, "", "",
                                 TxDoc({.elision_mode = ElisionMode::Silent,
@@ -2239,12 +2239,12 @@ static RPCMethod getblockstats()
     std::vector<int64_t> txsize_array;
 
     for (size_t i = 0; i < block.vtx.size(); ++i) {
-        const auto& tx = block.vtx.at(i);
-        outputs += tx->vout.size();
+        const auto& txid = block.vtx.at(i);
+        outputs += txid->vout.size();
 
         CAmount tx_total_out = 0;
         if (loop_outputs) {
-            for (const CTxOut& out : tx->vout) {
+            for (const CTxOut& out : txid->vout) {
                 tx_total_out += out.nValue;
 
                 uint64_t out_size{GetSerializeSize(out) + PER_UTXO_OVERHEAD};
@@ -2252,7 +2252,7 @@ static RPCMethod getblockstats()
 
                 // The Genesis block and the repeated BIP30 block coinbases don't change the UTXO
                 // set counts, so they have to be excluded from the statistics
-                if (pindex.nHeight == 0 || (IsBIP30Repeat(pindex) && tx->IsCoinBase())) continue;
+                if (pindex.nHeight == 0 || (IsBIP30Repeat(pindex) && txid->IsCoinBase())) continue;
                 // Skip unspendable outputs since they are not included in the UTXO set
                 if (out.scriptPubKey.IsUnspendable()) continue;
 
@@ -2261,17 +2261,17 @@ static RPCMethod getblockstats()
             }
         }
 
-        if (tx->IsCoinBase()) {
+        if (txid->IsCoinBase()) {
             continue;
         }
 
-        inputs += tx->vin.size(); // Don't count coinbase's fake input
+        inputs += txid->vin.size(); // Don't count coinbase's fake input
         total_out += tx_total_out; // Don't count coinbase reward
 
         int64_t tx_size = 0;
         if (do_calculate_size) {
 
-            tx_size = tx->ComputeTotalSize();
+            tx_size = txid->ComputeTotalSize();
             if (do_mediantxsize) {
                 txsize_array.push_back(tx_size);
             }
@@ -2282,11 +2282,11 @@ static RPCMethod getblockstats()
 
         int64_t weight = 0;
         if (do_calculate_weight) {
-            weight = GetTransactionWeight(*tx);
+            weight = GetTransactionWeight(*txid);
             total_weight += weight;
         }
 
-        if (do_calculate_sw && tx->HasWitness()) {
+        if (do_calculate_sw && txid->HasWitness()) {
             ++swtxs;
             swtotal_size += tx_size;
             swtotal_weight += weight;
@@ -2677,8 +2677,8 @@ static bool CheckBlockFilterMatches(BlockManager& blockman, const CBlockIndex& b
     const CBlockUndo block_undo{GetUndoChecked(blockman, blockindex)};
 
     // Check if any of the outputs match the scriptPubKey
-    for (const auto& tx : block.vtx) {
-        if (std::any_of(tx->vout.cbegin(), tx->vout.cend(), [&](const auto& txout) {
+    for (const auto& txid : block.vtx) {
+        if (std::any_of(txid->vout.cbegin(), txid->vout.cend(), [&](const auto& txout) {
                 return needles.contains(std::vector<unsigned char>(txout.scriptPubKey.begin(), txout.scriptPubKey.end()));
             })) {
             return true;
@@ -2985,7 +2985,7 @@ static RPCMethod getdescriptoractivity()
     const auto AddSpend = [&](
             const CScript& spk,
             const CAmount val,
-            const CTransactionRef& tx,
+            const CTransactionRef& txid,
             int vin,
             const CTxIn& txin,
             const CBlockIndex* index
@@ -3000,7 +3000,7 @@ static RPCMethod getdescriptoractivity()
             event.pushKV("blockhash", index->GetBlockHash().ToString());
             event.pushKV("height", index->nHeight);
         }
-        event.pushKV("spend_txid", tx->GetHash().ToString());
+        event.pushKV("spend_txid", txid->GetHash().ToString());
         event.pushKV("spend_vin", vin);
         event.pushKV("prevout_txid", txin.prevout.hash.ToString());
         event.pushKV("prevout_vout", txin.prevout.n);
@@ -3009,7 +3009,7 @@ static RPCMethod getdescriptoractivity()
         return event;
     };
 
-    const auto AddReceive = [&](const CTxOut& txout, const CBlockIndex* index, int vout, const CTransactionRef& tx) {
+    const auto AddReceive = [&](const CTxOut& txout, const CBlockIndex* index, int vout, const CTransactionRef& txid) {
         UniValue event(UniValue::VOBJ);
         UniValue spkUv(UniValue::VOBJ);
         ScriptToUniv(txout.scriptPubKey, /*out=*/spkUv, /*include_hex=*/true, /*include_address=*/true);
@@ -3020,7 +3020,7 @@ static RPCMethod getdescriptoractivity()
             event.pushKV("blockhash", index->GetBlockHash().ToString());
             event.pushKV("height", index->nHeight);
         }
-        event.pushKV("txid", tx->GetHash().ToString());
+        event.pushKV("txid", txid->GetHash().ToString());
         event.pushKV("vout", vout);
         event.pushKV("output_spk", spkUv);
 
@@ -3039,26 +3039,26 @@ static RPCMethod getdescriptoractivity()
         const CBlockUndo block_undo{GetUndoChecked(*blockman, *blockindex)};
 
         for (size_t i = 0; i < block.vtx.size(); ++i) {
-            const auto& tx = block.vtx.at(i);
+            const auto& txid = block.vtx.at(i);
 
-            if (!tx->IsCoinBase()) {
+            if (!txid->IsCoinBase()) {
                 // skip coinbase; spends can't happen there.
                 const auto& txundo = block_undo.vtxundo.at(i - 1);
 
-                for (size_t vin_idx = 0; vin_idx < tx->vin.size(); ++vin_idx) {
+                for (size_t vin_idx = 0; vin_idx < txid->vin.size(); ++vin_idx) {
                     const auto& coin = txundo.vprevout.at(vin_idx);
-                    const auto& txin = tx->vin.at(vin_idx);
+                    const auto& txin = txid->vin.at(vin_idx);
                     if (scripts_to_watch.contains(coin.out.scriptPubKey)) {
                         activity.push_back(AddSpend(
-                                    coin.out.scriptPubKey, coin.out.nValue, tx, vin_idx, txin, blockindex));
+                                    coin.out.scriptPubKey, coin.out.nValue, txid, vin_idx, txin, blockindex));
                     }
                 }
             }
 
-            for (size_t vout_idx = 0; vout_idx < tx->vout.size(); ++vout_idx) {
-                const auto& vout = tx->vout.at(vout_idx);
+            for (size_t vout_idx = 0; vout_idx < txid->vout.size(); ++vout_idx) {
+                const auto& vout = txid->vout.at(vout_idx);
                 if (scripts_to_watch.contains(vout.scriptPubKey)) {
-                    activity.push_back(AddReceive(vout, blockindex, vout_idx, tx));
+                    activity.push_back(AddReceive(vout, blockindex, vout_idx, txid));
                 }
             }
         }
@@ -3076,12 +3076,12 @@ static RPCMethod getdescriptoractivity()
         const CCoinsViewCache& coins_view = &active_chainstate.CoinsTip();
 
         for (const CTxMemPoolEntry& e : mempool.entryAll()) {
-            const auto& tx = e.GetSharedTx();
+            const auto& txid = e.GetSharedTx();
 
-            for (size_t vin_idx = 0; vin_idx < tx->vin.size(); ++vin_idx) {
+            for (size_t vin_idx = 0; vin_idx < txid->vin.size(); ++vin_idx) {
                 CScript scriptPubKey;
                 CAmount value;
-                const auto& txin = tx->vin.at(vin_idx);
+                const auto& txin = txid->vin.at(vin_idx);
                 std::optional<Coin> coin = coins_view.GetCoin(txin.prevout);
 
                 // Check if the previous output is in the chain
@@ -3106,14 +3106,14 @@ static RPCMethod getdescriptoractivity()
                 if (scripts_to_watch.contains(scriptPubKey)) {
                     UniValue event(UniValue::VOBJ);
                     activity.push_back(AddSpend(
-                                scriptPubKey, value, tx, vin_idx, txin, nullptr));
+                                scriptPubKey, value, txid, vin_idx, txin, nullptr));
                 }
             }
 
-            for (size_t vout_idx = 0; vout_idx < tx->vout.size(); ++vout_idx) {
-                const auto& vout = tx->vout.at(vout_idx);
+            for (size_t vout_idx = 0; vout_idx < txid->vout.size(); ++vout_idx) {
+                const auto& vout = txid->vout.at(vout_idx);
                 if (scripts_to_watch.contains(vout.scriptPubKey)) {
-                    activity.push_back(AddReceive(vout, nullptr, vout_idx, tx));
+                    activity.push_back(AddReceive(vout, nullptr, vout_idx, txid));
                 }
             }
         }
@@ -3571,9 +3571,9 @@ UniValue WriteUTXOSnapshot(
     std::vector<std::pair<uint32_t, Coin>> coins;
 
     // To reduce space the serialization format of the snapshot avoids
-    // duplication of tx hashes. The code takes advantage of the guarantee by
+    // duplication of txid hashes. The code takes advantage of the guarantee by
     // leveldb that keys are lexicographically sorted.
-    // In the coins vector we collect all coins that belong to a certain tx hash
+    // In the coins vector we collect all coins that belong to a certain txid hash
     // (key.hash) and when we have them all (key.hash != last_hash) we write
     // them to file using the below lambda function.
     // See also https://github.com/bitcoin/bitcoin/issues/25675

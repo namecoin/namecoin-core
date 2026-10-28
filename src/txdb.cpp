@@ -571,7 +571,7 @@ bool CCoinsViewDB::ValidateNameDB(const Chainstate& chainState, const std::funct
                 return false;
             }
     } else if (!namesWithHistory.empty ()) {
-        LogError ("%s : name_history entries in DB, but"
+        LogError ("%s : getnamehistory entries in DB, but"
                   " -namehistory not set", __func__);
         return false;
     }

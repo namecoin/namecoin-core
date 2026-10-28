@@ -558,12 +558,12 @@ UniValue NameOpToUniv (const CNameScript& nameOp)
   switch (nameOp.getNameOp ())
     {
       case OP_NAME_NEW:
-        result.pushKV ("op", "name_new");
+        result.pushKV ("op", "preregistername");
         result.pushKV ("hash", HexStr (nameOp.getOpHash ()));
         break;
 
       case OP_NAME_FIRSTUPDATE:
-        result.pushKV ("op", "name_firstupdate");
+        result.pushKV ("op", "registername");
         AddEncodedNameToUniv (result, "name", nameOp.getOpName (),
                               ConfiguredNameEncoding ());
         AddEncodedNameToUniv (result, "value", nameOp.getOpValue (),
@@ -572,7 +572,7 @@ UniValue NameOpToUniv (const CNameScript& nameOp)
         break;
 
       case OP_NAME_UPDATE:
-        result.pushKV ("op", "name_update");
+        result.pushKV ("op", "updatename");
         AddEncodedNameToUniv (result, "name", nameOp.getOpName (),
                               ConfiguredNameEncoding ());
         AddEncodedNameToUniv (result, "value", nameOp.getOpValue (),

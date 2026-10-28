@@ -33,12 +33,12 @@ class NameListUnspentTest (NameTestFramework):
     the txid:vout combination or None.
     """
 
-    minConf = 1
+    min_conf = 1
     if allowUnconfirmed:
-      minConf = 0
+      min_conf = 0
 
     opt = {"includeNames": includeNames}
-    res = self.nodes[ind].listunspent (minConf, None, addressFilter, None, opt)
+    res = self.nodes[ind].listunspent (min_conf, None, addressFilter, None, opt)
 
     for out in res:
       if (out['txid'], out['vout']) == (txid, vout):
@@ -50,7 +50,7 @@ class NameListUnspentTest (NameTestFramework):
     # Create a name new for testing.  Figure out the vout by looking at the
     # raw transaction.
     addrA = self.nodes[0].getnewaddress ()
-    new = self.nodes[0].name_new ("testname", {"destAddress": addrA})
+    new = self.nodes[0].name_new ("testname", {"dest_address": addrA})
     txid = new[0]
     raw = self.nodes[0].getrawtransaction (txid, 1)
     vout = None
@@ -91,7 +91,7 @@ class NameListUnspentTest (NameTestFramework):
 
     # Update the name, sending to another node.
     addrB = self.nodes[1].getnewaddress ()
-    self.nodes[0].name_update ("testname", "value", {"destAddress": addrB})
+    self.nodes[0].name_update ("testname", "value", {"dest_address": addrB})
     self.sync_mempools ()
 
     # Node 0 should no longer have the unspent output.

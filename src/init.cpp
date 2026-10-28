@@ -758,7 +758,7 @@ void SetupServerArgs(ArgsManager& argsman, bool can_listen_ipc)
 
     gArgs.AddArg("-nameencoding=<enc>", strprintf("Sets the default encoding used for names in the RPC interface (default: %s)", EncodingToString(DEFAULT_NAME_ENCODING)), ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
     gArgs.AddArg("-valueencoding=<enc>", strprintf("Sets the default encoding used for values in the RPC interface (default: %s)", EncodingToString(DEFAULT_VALUE_ENCODING)), ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
-    gArgs.AddArg("-limitnamechains=<n>", strprintf("Limit pending chains of name operations for name_update to <n> (default: %u)", DEFAULT_NAME_CHAIN_LIMIT), ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
+    gArgs.AddArg("-limitnamechains=<n>", strprintf("Limit pending chains of name operations for updatename to <n> (default: %u)", DEFAULT_NAME_CHAIN_LIMIT), ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
     gArgs.AddArg("-allowexpired", strprintf("Throw error on expired names (default: %u)", DEFAULT_ALLOWEXPIRED), ArgsManager::ALLOW_ANY, OptionsCategory::RPC);
     gArgs.AddArg("-checknamedb", "Check name database for consistency every x blocks, -1 to disable", ArgsManager::ALLOW_ANY, OptionsCategory::DEBUG_TEST);
 

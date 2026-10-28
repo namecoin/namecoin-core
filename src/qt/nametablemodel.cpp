@@ -72,31 +72,31 @@ public:
         qDebug() << "NameTablePriv::refreshNameTable";
         std::map<std::string, NameTableEntry> vNamesO;
 
-        // confirmed names (name_list)
+        // confirmed names (listnames)
 
         UniValue params(UniValue::VOBJ);
         UniValue options(UniValue::VOBJ);
-        options.pushKV ("nameEncoding", "hex");
-        options.pushKV ("valueEncoding", "hex");
+        options.pushKV ("name_encoding", "hex");
+        options.pushKV ("value_encoding", "hex");
         params.pushKV ("options", options);
 
         const std::string walletURI = "/wallet/" + parent.walletModel->getWalletName().toStdString();
 
         UniValue confirmedNames;
         try {
-            confirmedNames = parent.walletModel->node().executeRpc("name_list", params, walletURI);
+            confirmedNames = parent.walletModel->node().executeRpc("listnames", params, walletURI);
         } catch (const UniValue& e) {
             // although we shouldn't typically encounter error here, we
             // should continue and try to add confirmed names and
             // pending names. show error to user in case something
             // actually went wrong so they can potentially recover
             const UniValue message = e.find_value( "message");
-            LogDebug(BCLog::QT, "name_list lookup error: %s\n", message.get_str());
+            LogDebug(BCLog::QT, "listnames lookup error: %s\n", message.get_str());
         } catch (const std::exception& e) {
-            LogDebug(BCLog::QT, "name_list lookup error: %s\n", e.what());
+            LogDebug(BCLog::QT, "listnames lookup error: %s\n", e.what());
         }
 
-        // will be an object if name_list command isn't available/other error
+        // will be an object if listnames command isn't available/other error
         if(confirmedNames.isArray())
         {
             for (const auto& v : confirmedNames.getValues())
@@ -147,23 +147,23 @@ public:
             }
         }
 
-        // unconfirmed names (name_pending)
+        // unconfirmed names (getmempoolname)
 
         UniValue pendingNames;
         try {
-            pendingNames = parent.walletModel->node().executeRpc("name_pending", params, walletURI);
+            pendingNames = parent.walletModel->node().executeRpc("getmempoolname", params, walletURI);
         } catch (const UniValue& e) {
             // although we shouldn't typically encounter error here, we
             // should continue and try to add confirmed names and
             // pending names. show error to user in case something
             // actually went wrong so they can potentially recover
             const UniValue message = e.find_value( "message");
-            LogDebug(BCLog::QT, "name_pending lookup error: %s\n", message.get_str());
+            LogDebug(BCLog::QT, "getmempoolname lookup error: %s\n", message.get_str());
         } catch (const std::exception& e) {
-            LogDebug(BCLog::QT, "name_pending lookup error: %s\n", e.what());
+            LogDebug(BCLog::QT, "getmempoolname lookup error: %s\n", e.what());
         }
 
-        // will be an object if name_pending command isn't available/other error
+        // will be an object if getmempoolname command isn't available/other error
         if(pendingNames.isArray())
         {
             for (const auto& v : pendingNames.getValues())
@@ -223,13 +223,13 @@ public:
                         // The name will be ours when it confirms, but it
                         // wasn't ours before.
 
-                        if (op == "name_firstupdate")
+                        if (op == "registername")
                         {
                             // This is a registration, so the reason it wasn't
                             // ours before is that we hadn't registered it yet.
                             status = NameTableEntry::NAME_STATUS_REGISTRATION_PENDING;
                         }
-                        else if (op == "name_update")
+                        else if (op == "updatename")
                         {
                             // This is an update, so we weren't the one to
                             // register it.  (If we were, there would be a
@@ -279,13 +279,13 @@ public:
                     // The name will be ours when it confirms, but it wasn't
                     // ours before.
 
-                    if (op == "name_firstupdate")
+                    if (op == "registername")
                     {
                         // This is a registration, so the reason it wasn't ours
                         // before is that we hadn't registered it yet.
                         status = NameTableEntry::NAME_STATUS_REGISTRATION_PENDING;
                     }
-                    else if (op == "name_update")
+                    else if (op == "updatename")
                     {
                         // This is an update, so we weren't the one to register
                         // it.  (If we were, there would be a confirmed entry.)
@@ -374,7 +374,7 @@ public:
     }
 };
 
-// TODO: figure out which of these members are actually still necessary for name_list
+// TODO: figure out which of these members are actually still necessary for listnames
 NameTableModel::NameTableModel(const PlatformStyle *platformStyle, WalletModel *parent):
         QAbstractTableModel(parent),
         walletModel(parent),
@@ -498,7 +498,7 @@ QVariant NameTableModel::headerData(int section, Qt::Orientation orientation, in
                 return tr("Data associated with the name.");
 
             case ExpiresIn:
-                return tr("Number of blocks, after which the name will expire. Update name to renew it.\nEmpty cell means pending(awaiting automatic name_firstupdate or awaiting network confirmation).");
+                return tr("Number of blocks, after which the name will expire. Update name to renew it.\nEmpty cell means pending(awaiting automatic registername or awaiting network confirmation).");
         }
     }
     return QVariant();
@@ -554,7 +554,7 @@ QString NameTableModel::hexToAscii(const QString &hex)
 
 QString NameTableModel::update(const QString &name, const std::optional<QString> &value, const std::optional<QString> &transferTo) const
 {
-    LogDebug(BCLog::QT, "wallet attempting name_update: name=%s\n", name.toStdString());
+    LogDebug(BCLog::QT, "wallet attempting updatename: name=%s\n", name.toStdString());
 
     UniValue params(UniValue::VOBJ);
 
@@ -571,7 +571,7 @@ QString NameTableModel::update(const QString &name, const std::optional<QString>
     }
 
     UniValue options(UniValue::VOBJ);
-    options.pushKV ("nameEncoding", "hex");
+    options.pushKV ("name_encoding", "hex");
 
     if (value)
     {
@@ -585,12 +585,12 @@ QString NameTableModel::update(const QString &name, const std::optional<QString>
             return tr ("Value was invalid ASCII.");
         }
 
-        options.pushKV ("valueEncoding", "hex");
+        options.pushKV ("value_encoding", "hex");
     }
 
     if (transferTo)
     {
-        options.pushKV ("destAddress", transferTo.value().toStdString());
+        options.pushKV ("dest_address", transferTo.value().toStdString());
     }
 
     params.pushKV ("options", options);
@@ -598,12 +598,12 @@ QString NameTableModel::update(const QString &name, const std::optional<QString>
     const std::string walletURI = "/wallet/" + walletModel->getWalletName().toStdString();
 
     try {
-        walletModel->node().executeRpc("name_update", params, walletURI);
+        walletModel->node().executeRpc("updatename", params, walletURI);
     }
     catch (const UniValue& e) {
         const UniValue message = e.find_value("message");
         const std::string errorStr = message.get_str();
-        LogDebug(BCLog::QT, "name_update error: %s\n", errorStr);
+        LogDebug(BCLog::QT, "updatename error: %s\n", errorStr);
         return QString::fromStdString(errorStr);
     }
     return tr ("");

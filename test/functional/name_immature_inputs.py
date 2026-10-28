@@ -54,7 +54,7 @@ class NameImmatureInputsTest (NameTestFramework):
     #   https://github.com/namecoin/namecoin-core/issues/50
 
     addr = self.nodes[0].getnewaddress ()
-    new = self.nodes[0].name_new ("b", {"destAddress": addr})
+    new = self.nodes[0].name_new ("b", {"dest_address": addr})
     newTx = self.nodes[0].getrawtransaction (new[0])
     nameInd = self.rawtxOutputIndex (0, newTx, addr)
 
