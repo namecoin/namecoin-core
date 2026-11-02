@@ -1,9 +1,9 @@
-v31.x Release Notes
+v31.2 Release Notes
 ===================
 
-Bitcoin Core version 31.x is now available from:
+Bitcoin Core version 31.2 is now available from:
 
-  <https://bitcoincore.org/bin/bitcoin-core-31.x/>
+  <https://bitcoincore.org/bin/bitcoin-core-31.2/>
 
 This release includes various bug fixes and performance
 improvements, as well as updated translations.
@@ -55,6 +55,7 @@ Notable changes
 
 ### Validation
 
+- #35168 validation: Don't add pruned blocks to m_blocks_unlinked on startup
 - #35209 validation: correct lifetime of precomputed tx data
 - #35465 coins: compact chainstate regularly
 
@@ -73,12 +74,19 @@ Notable changes
 - #35678 private broadcast: define and use new RPC_LIMIT_EXCEEDED error code
 - #35691 chainparams: delete my DNS seed
 - #35766 p2p: Assume v2transport for addresses from seeds
+- #36312 net: don't discourage private broadcast peers
 
 ### Net
 
 - #36177 net: fix startup failures from stale Tor examples
 - #36199 net: treat RFC 9637 new IPv6 documentation range as invalid
 - #36201 Update embedded asmap to 1788801420
+- #36665 sock: align exception monitoring between poll() and select() backends
+- #36667 net: enforce timeout interval for paused send peers
+
+### Util
+
+- #36669 refactor: store positions as a 64 bits integer in flatfiles
 
 ### Test
 
@@ -113,6 +121,7 @@ Credits
 Thanks to everyone who directly contributed to this release:
 
 - ajtowns
+- Andrew Toth
 - cyb3ralbert
 - darosior
 - fanquake
@@ -123,6 +132,7 @@ Thanks to everyone who directly contributed to this release:
 - jpk68
 - Lőrinc
 - MarcoFalke
+- marcofleon
 - Martin Zumsande
 - Mccalabrese
 - Sebastian Falbesoner
