@@ -44,9 +44,11 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <list>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
+#include <vector>
 
 TRACEPOINT_SEMAPHORE(net, closed_connection);
 TRACEPOINT_SEMAPHORE(net, evicted_inbound_connection);
@@ -1675,7 +1677,11 @@ std::pair<size_t, bool> CConnman::SocketSendData(CNode& node) const
         }
     }
 
-    node.fPauseSend = node.m_send_memusage + node.m_transport->GetSendMemoryUsage() > nSendBufferMaxSize;
+    const bool pause_send{node.m_send_memusage + node.m_transport->GetSendMemoryUsage() > nSendBufferMaxSize};
+    if (pause_send && !node.fPauseSend) {
+        node.m_pause_send_since = NodeClock::now();
+    }
+    node.fPauseSend = pause_send;
 
     if (it == node.vSendMsg.end()) {
         assert(node.m_send_memusage == 0);
@@ -1968,7 +1974,7 @@ void CConnman::DisconnectNodes()
             if (pnode->fDisconnect)
             {
                 // remove from m_nodes
-                m_nodes.erase(remove(m_nodes.begin(), m_nodes.end(), pnode), m_nodes.end());
+                std::erase(m_nodes, pnode);
 
                 // Add to reconnection list if appropriate. We don't reconnect right here, because
                 // the creation of a connection is a blocking operation (up to several seconds),
@@ -2006,7 +2012,7 @@ void CConnman::DisconnectNodes()
         {
             // Destroy the object only after other threads have stopped using it.
             if (pnode->GetRefCount() <= 0) {
-                m_nodes_disconnected.remove(pnode);
+                std::erase(m_nodes_disconnected, pnode);
                 DeleteNode(pnode);
             }
         }
@@ -2079,6 +2085,17 @@ bool CConnman::InactivityCheck(const CNode& node, NodeClock::time_point now) con
             node.DisconnectMsg()
         );
         return true;
+    }
+
+    if (node.fPauseSend) {
+        const auto last_pause{node.m_pause_send_since.load()};
+        if (now > last_pause + TIMEOUT_INTERVAL) {
+            LogDebug(BCLog::NET,
+                "send buffer full for %is, %s", Ticks<std::chrono::seconds>(now - last_pause),
+                node.DisconnectMsg()
+            );
+            return true;
+        }
     }
 
     if (!node.fSuccessfullyConnected) {
@@ -2705,9 +2722,7 @@ void CConnman::ThreadOpenConnections(const std::vector<std::string> connect, std
                 // In case previously unreachable networks become reachable
                 // (e.g. in case of -onlynet changes by the user), fixed seeds will
                 // be loaded only for networks for which we have no addresses.
-                seed_addrs.erase(std::remove_if(seed_addrs.begin(), seed_addrs.end(),
-                                                [&fixed_seed_networks](const CAddress& addr) { return !fixed_seed_networks.contains(addr.GetNetwork()); }),
-                                 seed_addrs.end());
+                std::erase_if(seed_addrs, [&fixed_seed_networks](const CAddress& addr) { return !fixed_seed_networks.contains(addr.GetNetwork()); });
                 CNetAddr local;
                 local.SetInternal("fixedseeds");
                 addrman.get().Add(seed_addrs, local);
@@ -3824,9 +3839,7 @@ std::vector<CAddress> CConnman::GetAddressesUnsafe(size_t max_addresses, size_t 
 {
     std::vector<CAddress> addresses = addrman.get().GetAddr(max_addresses, max_pct, network, filtered);
     if (m_banman) {
-        addresses.erase(std::remove_if(addresses.begin(), addresses.end(),
-                        [this](const CAddress& addr){return m_banman->IsDiscouraged(addr) || m_banman->IsBanned(addr);}),
-                        addresses.end());
+        std::erase_if(addresses, [this](const CAddress& addr) { return m_banman->IsDiscouraged(addr) || m_banman->IsBanned(addr); });
     }
     return addresses;
 }
@@ -4242,7 +4255,10 @@ void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
 
         // Update memory usage of send buffer.
         pnode->m_send_memusage += msg.GetMemoryUsage();
-        if (pnode->m_send_memusage + pnode->m_transport->GetSendMemoryUsage() > nSendBufferMaxSize) pnode->fPauseSend = true;
+        if (pnode->m_send_memusage + pnode->m_transport->GetSendMemoryUsage() > nSendBufferMaxSize && !pnode->fPauseSend) {
+            pnode->m_pause_send_since = NodeClock::now();
+            pnode->fPauseSend = true;
+        }
         // Move message to vSendMsg queue.
         pnode->vSendMsg.push_back(std::move(msg));
 
