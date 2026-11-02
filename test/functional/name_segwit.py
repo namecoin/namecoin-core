@@ -163,7 +163,7 @@ class NameSegwitTest (NameTestFramework):
     assert softfork_active (self.node, "segwit")
     assert_equal (self.tryUpdateInBlock (name, "wrong value", addr,
                                          withWitness=True),
-                  'mempool-script-verify-flag-failed'
+                  'block-script-verify-flag-failed'
                     + ' (Script failed an OP_EQUALVERIFY operation)')
     self.checkNameValueAddr (name, value, addr)
 
