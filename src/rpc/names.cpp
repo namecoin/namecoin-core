@@ -349,19 +349,25 @@ constexpr bool optional = true;
 
 } // anonymous namespace
 
-const RPCResult NameOpResult{RPCResult::Type::OBJ, "nameOp", optional,
-    "The encoded name-operation (if the script has one)",
-    {
-      {RPCResult::Type::STR, "op", "The type of operation"},
-      {RPCResult::Type::STR_HEX, "hash", optional, "Hash value for name_new"},
-      {RPCResult::Type::STR_HEX, "rand", optional, "Seed value for name_firstupdate"},
-      {RPCResult::Type::STR, "name", optional, "Name for updates"},
-      {RPCResult::Type::STR, "name_error", optional, "Encoding error for the name, if any"},
-      {RPCResult::Type::STR, "name_encoding", optional, "Encoding of the name"},
-      {RPCResult::Type::STR, "value", optional, "Value for updates"},
-      {RPCResult::Type::STR, "value_error", optional, "Encoding error for the value, if any"},
-      {RPCResult::Type::STR, "value_encoding", optional, "Encoding of the value"},
-    }};
+const RPCResult&
+NameOpResult ()
+{
+  static const RPCResult result{RPCResult::Type::OBJ, "nameOp", optional,
+      "The encoded name-operation (if the script has one)",
+      {
+        {RPCResult::Type::STR, "op", "The type of operation"},
+        {RPCResult::Type::STR_HEX, "hash", optional, "Hash value for name_new"},
+        {RPCResult::Type::STR_HEX, "rand", optional, "Seed value for name_firstupdate"},
+        {RPCResult::Type::STR, "name", optional, "Name for updates"},
+        {RPCResult::Type::STR, "name_error", optional, "Encoding error for the name, if any"},
+        {RPCResult::Type::STR, "name_encoding", optional, "Encoding of the name"},
+        {RPCResult::Type::STR, "value", optional, "Value for updates"},
+        {RPCResult::Type::STR, "value_error", optional, "Encoding error for the value, if any"},
+        {RPCResult::Type::STR, "value_encoding", optional, "Encoding of the value"},
+      }};
+
+  return result;
+}
 
 /* ************************************************************************** */
 
