@@ -424,8 +424,7 @@ BASE_SCRIPTS = [
     'name_ant_workflow.py',
     'name_bumpfee.py',
     'name_byhash.py',
-    # FIXME: Fix for descriptor wallets:
-    #'name_deterministic_salt.py',
+    'name_deterministic_salt.py',
     'name_encodings.py',
     'name_expiration.py',
     'name_immature_inputs.py',
@@ -457,7 +456,6 @@ SKIPPED = [
     'feature_versionbits_warning.py',
     'mempool_cluster.py',
     'mining_mainnet.py',
-    'name_deterministic_salt.py',
     'tool_bitcoin.py',
 ]
 
