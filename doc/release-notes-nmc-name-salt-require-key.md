@@ -8,4 +8,7 @@ Wallet
   and was not secret. The wallet that sent the `name_new` can finish the
   registration without `rand`, also with the "Register Name…" button of the
   GUI. The wallet of a co-signer holds other keys and needs the `rand` value
-  that `name_new` returned.
+  that `name_new` returned. Registrations of this kind that were started
+  before the upgrade can still be finished without `rand` by a wallet that
+  owns the address: `name_firstupdate` accepts the old value if it matches
+  the `name_new`.

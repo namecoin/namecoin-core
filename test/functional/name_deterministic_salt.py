@@ -6,6 +6,7 @@
 # the wallet has none.
 
 import re
+from decimal import Decimal
 
 from test_framework.address import base58_to_byte
 from test_framework.crypto.hkdf import hkdf_sha256
@@ -316,8 +317,38 @@ class NameDeterministicSaltTest(NameTestFramework):
         self.checkName(0, "d/multisig-cosigner", "", 30, False)
         self.assertFirstupdate("d/multisig-cosigner", new[0], new[1], walletB)
 
+        self.log.info("Registrations started with the public salt can be finished.")
+        # Earlier versions of name_new used the public salt as rand for such
+        # addresses.  Send such name_new outputs with raw transactions, two
+        # to the wallet and one to an address of another wallet.
+        publicNew = {}
+        for name in ["d/public-scan", "d/public-txid"]:
+            publicNew[name] = self.sendRawNameNew(walletA, name, walletA.getnewaddress(), public_salt(name))
+        foreignTxid = self.sendRawNameNew(walletA, "d/public-foreign", mainWallet.getnewaddress(), public_salt("d/public-foreign"))
+        self.generate (node, 12)
+        walletA.name_firstupdate("d/public-scan")
+        walletA.name_firstupdate("d/public-txid", None, publicNew["d/public-txid"])
+        # The public salt is only accepted for outputs of the wallet.
+        assert_raises_rpc_error(-25, "scan for previous txid failed", walletA.name_firstupdate, "d/public-foreign")
+        assert_raises_rpc_error(-25, "could not generate rand for txid", walletA.name_firstupdate, "d/public-foreign", None, foreignTxid)
+        self.generate (node, 1)
+        for name, txid in publicNew.items():
+            self.checkName(0, name, "", 30, False)
+            self.assertFirstupdate(name, txid, public_salt(name), walletA)
+
         node.unloadwallet("cosigner-a")
         node.unloadwallet("cosigner-b")
+
+    def sendRawNameNew(self, rpc, name, addr, rand):
+        """Send a name_new of name with the given rand to addr in a raw
+        transaction funded by the wallet of rpc.  Returns the txid."""
+        tx = rpc.createrawtransaction([], {addr: Decimal("0.01")})
+        nameTx = rpc.namerawtransaction(tx, 0, {"op": "name_new", "name": name, "rand": rand})
+        assert_equal(nameTx["rand"], rand)
+        tx = rpc.fundrawtransaction(nameTx["hex"])["hex"]
+        signed = rpc.signrawtransactionwithwallet(tx)
+        assert_equal(signed["complete"], True)
+        return rpc.sendrawtransaction(signed["hex"])
 
     def assertFirstupdate(self, name, newTxid, rand, rpc=None):
         """Check that the confirmed name_firstupdate of name spends the

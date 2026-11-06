@@ -387,6 +387,33 @@ saltMatchesHash(const valtype& name, const valtype& rand, const valtype& expecte
     return (Hash160(toHash) == uint160(expectedHash));
 }
 
+/**
+ * For addresses without a single private key (e.g. multisig), name_new of
+ * earlier versions used the salt of an empty key as rand, a value that only
+ * depends on the name.  This value is accepted for a name_new output of the
+ * wallet if it matches the commitment, so that such registrations can still
+ * be finished without giving rand.  It is never used for new registrations.
+ * @return True if the value matches; rand is set to it then
+ */
+bool
+getEmptyKeyNameSalt (CWallet* const pwallet, const valtype& name,
+                     const CScript& output, const valtype& hash, valtype& rand)
+    EXCLUSIVE_LOCKS_REQUIRED (pwallet->cs_wallet)
+{
+  AssertLockHeld (pwallet->cs_wallet);
+
+  if (!pwallet->IsMine (output))
+    return false;
+
+  valtype emptyKeyRand;
+  getNameSalt (CKey (), name, emptyKeyRand);
+  if (!saltMatchesHash (name, emptyKeyRand, hash))
+    return false;
+
+  rand = emptyKeyRand;
+  return true;
+}
+
 } // anonymous namespace
 
 /**
@@ -705,8 +732,10 @@ name_firstupdate ()
 
           if (!fixedRand
                 && !findNameSalt (getNameSaltKeys (pwallet, output), name,
-                                  nameOp.getOpHash (), rand))
-            continue; // no key of ours gives the rand of that output
+                                  nameOp.getOpHash (), rand)
+                && !getEmptyKeyNameSalt (pwallet, name, output,
+                                         nameOp.getOpHash (), rand))
+            continue; // no rand of ours matches that output
 
           if (!saltMatchesHash (name, rand, nameOp.getOpHash ()))
             continue;
@@ -741,10 +770,14 @@ name_firstupdate ()
       LOCK (pwallet->cs_wallet);
       EnsureWalletIsUnlocked (*pwallet);
       const auto keys = getNameSaltKeys (pwallet, prevOut.scriptPubKey);
-      if (keys.empty ())
-        throw JSONRPCError (RPC_TRANSACTION_ERROR, "could not generate rand for txid");
-      if (!findNameSalt (keys, name, prevNameOp.getOpHash (), rand))
-        throw JSONRPCError (RPC_TRANSACTION_ERROR, "generated rand for txid does not match");
+      if (!findNameSalt (keys, name, prevNameOp.getOpHash (), rand)
+            && !getEmptyKeyNameSalt (pwallet, name, prevOut.scriptPubKey,
+                                     prevNameOp.getOpHash (), rand))
+        {
+          if (keys.empty ())
+            throw JSONRPCError (RPC_TRANSACTION_ERROR, "could not generate rand for txid");
+          throw JSONRPCError (RPC_TRANSACTION_ERROR, "generated rand for txid does not match");
+        }
     }
 
   if (!saltMatchesHash (name, rand, prevNameOp.getOpHash ()))
