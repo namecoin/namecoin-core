@@ -3412,9 +3412,10 @@ ScriptPubKeyMan* CWallet::GetScriptPubKeyMan(const OutputType& type, bool intern
     return it->second;
 }
 
-std::set<ScriptPubKeyMan*> CWallet::GetScriptPubKeyMans(const CScript& script) const
+std::set<ScriptPubKeyMan*> CWallet::GetScriptPubKeyMans(const CScript& fullScript) const
 {
     std::set<ScriptPubKeyMan*> spk_mans;
+    const CScript script = CNameScript(fullScript).getAddress();
 
     // Search the cache for relevant SPKMs instead of iterating m_spk_managers
     const auto& it = m_cached_spks.find(script);
