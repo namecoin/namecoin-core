@@ -213,7 +213,7 @@ void BuyNamesPage::onRegisterNameAction()
 
     ui->registerNameDomain->setText("");
     ui->registerNameAscii->setText("d/");
-    ui->registerNameHex->setText(HexToASCII(QString("d/")));
+    ui->registerNameHex->setText(ASCIIToHex(QString("d/")));
     ui->registerNameButton->setDefault(true);
 }
 
