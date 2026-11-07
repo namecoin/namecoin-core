@@ -422,6 +422,7 @@ BASE_SCRIPTS = [
     # name tests
     'name_allowexpired.py',
     'name_ant_workflow.py',
+    'name_autoregister.py',
     'name_bumpfee.py',
     'name_byhash.py',
     'name_deterministic_salt.py',
@@ -439,13 +440,13 @@ BASE_SCRIPTS = [
     'name_package.py',
     'name_pending.py',
     'name_psbt.py',
+    'name_firstupdate_maturity.py',
     'name_rawtx.py',
     'name_registration.py',
     'name_reorg.py',
     'name_scanning.py',
     'name_segwit.py',
     'name_sendcoins.py',
-    'name_txnqueue.py',
     'name_utxo.py',
     'name_wallet.py',
 ]

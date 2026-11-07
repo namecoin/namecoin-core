@@ -1124,9 +1124,8 @@ RPCMethod name_list();
 RPCMethod name_new();
 RPCMethod name_firstupdate();
 RPCMethod name_update();
-RPCMethod queuerawtransaction();
-RPCMethod dequeuetransaction();
-RPCMethod listqueuedtransactions();
+RPCMethod name_autoregister();
+
 RPCMethod sendtoname();
 
 std::span<const CRPCCommand> GetWalletRPCCommands()
@@ -1203,9 +1202,8 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"names", &name_new},
         {"names", &name_firstupdate},
         {"names", &name_update},
-        {"names", &queuerawtransaction},
-        {"names", &dequeuetransaction},
-        {"names", &listqueuedtransactions},
+        {"names", &name_autoregister},
+
         {"names", &sendtoname},
     };
     return commands;
