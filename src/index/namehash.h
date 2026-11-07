@@ -10,12 +10,13 @@
 #include <uint256.h>
 
 #include <memory>
+#include <cstdint>
 
 /** Default value for the -namehashindex argument.  */
 static constexpr bool DEFAULT_NAMEHASHINDEX = false;
 
 /** Maximum size of the DB cache for the name-hash index.  */
-static constexpr size_t MAX_NAMEHASH_CACHE = 1024_GiB;
+static constexpr uint64_t MAX_NAMEHASH_CACHE = 1024_GiB;
 
 /**
  * This keeps an index of SHA-256d hashes of names to the corresponding preimage
