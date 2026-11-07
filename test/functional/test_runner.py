@@ -438,6 +438,7 @@ BASE_SCRIPTS = [
     'name_novalue.py',
     'name_package.py',
     'name_pending.py',
+    'name_pending_mineonly.py',
     'name_psbt.py',
     'name_rawtx.py',
     'name_registration.py',
