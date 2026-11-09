@@ -417,12 +417,12 @@ def ensure_for(*, duration, f, check_interval=0.2):
     # to checking once in the beginning and once at the end of duration
     if check_interval <= 0 or check_interval > duration:
         check_interval = duration
-    time_end = time.time() + duration
+    time_end = time.monotonic() + duration
     predicate_source = "''''\n" + inspect.getsource(f) + "'''"
     while True:
         if not f():
             raise AssertionError(f"Predicate {predicate_source} became false within {duration} seconds")
-        if time.time() > time_end:
+        if time.monotonic() > time_end:
             return
         time.sleep(check_interval)
 
@@ -437,9 +437,9 @@ def wait_until_helper_internal(predicate, *, timeout=60, lock=None, timeout_fact
     `p2p.py` has a preset lock.
     """
     timeout = timeout * timeout_factor
-    time_end = time.time() + timeout
+    time_end = time.monotonic() + timeout
 
-    while time.time() < time_end:
+    while time.monotonic() < time_end:
         if lock:
             with lock:
                 if predicate():
@@ -723,12 +723,6 @@ def dumb_sync_blocks(*, src, dst, height=None):
         dst.submitblock(block)
     assert_equal(dst.getblockcount(), height)
 
-
-def sync_txindex(test_framework, node):
-    test_framework.log.debug("Waiting for node txindex to sync")
-    sync_start = int(time.time())
-    test_framework.wait_until(lambda: node.getindexinfo("txindex")["txindex"]["synced"])
-    test_framework.log.debug(f"Synced in {time.time() - sync_start} seconds")
 
 def wallet_importprivkey(wallet_rpc, privkey, timestamp, *, label=""):
     desc = descsum_create("combo(" + privkey + ")")

@@ -2053,7 +2053,7 @@ void PeerManagerImpl::MaybePunishNodeForBlock(NodeId nodeid, const BlockValidati
             // Discourage outbound (but not inbound) peers if on an invalid chain.
             // Exempt HB compact block peers. Manual connections are always protected from discouragement.
             if (peer && !via_compact_block && !peer->m_is_inbound) {
-                if (peer) Misbehaving(*peer, message);
+                Misbehaving(*peer, message);
                 return;
             }
             break;
@@ -3498,7 +3498,8 @@ void PeerManagerImpl::ProcessPackageResult(const node::PackageToValidate& packag
                 }
                 case MempoolAcceptResult::ResultType::MEMPOOL_ENTRY:
                 {
-                    // AlreadyHaveTx() should be catching transactions that are already in mempool.
+                    // AlreadyHaveTx() catches a parent that is already in the mempool, and
+                    // Find1P1CPackage() skips children that are.
                     Assume(false);
                     break;
                 }
@@ -4291,17 +4292,17 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
     }
 
     // Received from a peer demonstrating readiness to announce transactions via reconciliations.
-    // This feature negotiation must happen between VERSION and VERACK to avoid relay problems
-    // from switching announcement protocols after the connection is up.
     if (msg_type == NetMsgType::SENDTXRCNCL) {
-        if (!m_txreconciliation) {
-            LogDebug(BCLog::NET, "sendtxrcncl from peer=%d ignored, as our node does not have txreconciliation enabled\n", pfrom.GetId());
-            return;
-        }
-
+        // This feature negotiation must happen between VERSION and VERACK to avoid relay problems
+        // from switching announcement protocols after the connection is up.
         if (pfrom.fSuccessfullyConnected) {
             LogDebug(BCLog::NET, "sendtxrcncl received after verack, %s", pfrom.DisconnectMsg());
             pfrom.fDisconnect = true;
+            return;
+        }
+
+        if (!m_txreconciliation) {
+            LogDebug(BCLog::NET, "sendtxrcncl from peer=%d ignored, as our node does not have txreconciliation enabled", pfrom.GetId());
             return;
         }
 

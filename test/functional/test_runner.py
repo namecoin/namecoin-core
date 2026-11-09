@@ -197,6 +197,7 @@ BASE_SCRIPTS = [
     'wallet_txn_clone.py',
     'wallet_txn_clone.py --segwit',
     'rpc_getchaintips.py',
+    'feature_io_errors.py',
     'rpc_misc.py',
     'p2p_1p1c_network.py',
     'interface_rest.py',
@@ -706,7 +707,7 @@ def run_tests(*, test_list, build_dir, tmpdir, jobs=1, enable_coverage=False, ar
         flags=flags,
         use_term_control=use_term_control,
     )
-    start_time = time.time()
+    start_time = time.monotonic()
     test_results = []
 
     max_len_name = len(max(test_list, key=len))
@@ -748,7 +749,7 @@ def run_tests(*, test_list, build_dir, tmpdir, jobs=1, enable_coverage=False, ar
                              f"Test execution data left in {tmpdir}.\n"
                              f"Additional storage is needed to execute testing.")
 
-    runtime = int(time.time() - start_time)
+    runtime = int(time.monotonic() - start_time)
     print_results(test_results, max_len_name, runtime)
     if results_filepath:
         write_results(test_results, results_filepath, runtime)
@@ -842,7 +843,7 @@ class TestHandler:
 
             task = [
                 test,
-                time.time(),
+                time.monotonic(),
                 subprocess.Popen(
                     [sys.executable, self.tests_dir + test_argv[0]] + test_argv[1:] + self.flags + portseed_arg + tmpdir_arg,
                     text=True,
@@ -886,7 +887,7 @@ class TestHandler:
                     clearline = '\r' + (' ' * dot_count) + '\r'
                     print(clearline, end='', flush=True)
                 dot_count = 0
-                ret.append((TestResult(name, status, int(time.time() - start_time)), testdir, stdout, stderr, proc.returncode, skip_reason))
+                ret.append((TestResult(name, status, int(time.monotonic() - start_time)), testdir, stdout, stderr, proc.returncode, skip_reason))
             if ret:
                 return ret
             if self.use_term_control:

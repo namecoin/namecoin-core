@@ -395,10 +395,6 @@ struct RPCResult {
 
     /** Append the sections of the result. */
     void ToSections(Sections& sections, OuterType outer_type = OuterType::NONE, int current_indent = 0) const;
-    /** Return the type string of the result when it is in an object (dict). */
-    std::string ToStringObj() const;
-    /** Return the description string, including the result type. */
-    std::string ToDescriptionString() const;
     /** Check whether the result JSON type matches.
      * Returns true if type matches, or object describing error(s) if not.
      */
@@ -462,6 +458,7 @@ public:
      *
      * The instantiation of this helper for type R must match the corresponding RPCArg::Type.
      *
+     * @param key The first name of the argument. Aliases are not supported.
      * @return The value of the RPC argument (or the default value) cast to type R.
      *
      * @see MaybeArg for handling optional arguments without default values.
@@ -492,6 +489,7 @@ public:
      *
      * The instantiation of this helper for type R must match the corresponding RPCArg::Type.
      *
+     * @param key The first name of the argument. Aliases are not supported.
      * @return For trivially copyable types, a std::optional<R> is returned.
      *         For other types, a R* pointer to the argument is returned. If the
      *         argument is not provided, std::nullopt or a null pointer is returned.
@@ -533,7 +531,7 @@ private:
     mutable const JSONRPCRequest* m_req{nullptr}; // A pointer to the request for the duration of m_fun()
     template <typename R>
     R ArgValue(size_t i) const;
-    //! Return positional index of a parameter using its name as key.
+    //! Return positional index of a parameter using its first name as key.
     size_t GetParamIndex(std::string_view key) const;
 };
 
