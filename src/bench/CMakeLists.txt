@@ -11,6 +11,7 @@ add_executable(bench_bitcoin
   base58.cpp
   bech32.cpp
   bip324_ecdh.cpp
+  bip352.cpp
   block_assemble.cpp
   blockencodings.cpp
   ccoins_caching.cpp
@@ -62,6 +63,7 @@ add_windows_application_manifest(bench_bitcoin)
 include(TargetDataSources)
 target_raw_data_sources(bench_bitcoin NAMESPACE benchmark::data
   data/block413567.raw
+  data/block413567_undo.raw
 )
 
 target_link_libraries(bench_bitcoin

@@ -28,6 +28,8 @@ BOOST_AUTO_TEST_CASE(GetFeeTest)
     // Must always return 0
     BOOST_CHECK_EQUAL(feeRate.GetFee(0), CAmount(0));
     BOOST_CHECK_EQUAL(feeRate.GetFee(1e5), CAmount(0));
+    BOOST_CHECK_EQUAL(CFeeRate(0, 0).GetFeePerK(), CAmount{0});
+    BOOST_CHECK_EQUAL(CFeeRate(CAmount{5}, 0).GetFeePerK(), CAmount{0});
 
     feeRate = CFeeRate(1000);
     // Must always just return the arg
@@ -50,7 +52,7 @@ BOOST_AUTO_TEST_CASE(GetFeeTest)
     feeRate = CFeeRate(123);
     // Rounds up the result, if not integer
     BOOST_CHECK_EQUAL(feeRate.GetFee(0), CAmount(0));
-    BOOST_CHECK_EQUAL(feeRate.GetFee(8), CAmount(1)); // Special case: returns 1 instead of 0
+    BOOST_CHECK_EQUAL(feeRate.GetFee(8), CAmount(1));
     BOOST_CHECK_EQUAL(feeRate.GetFee(9), CAmount(2));
     BOOST_CHECK_EQUAL(feeRate.GetFee(121), CAmount(15));
     BOOST_CHECK_EQUAL(feeRate.GetFee(122), CAmount(16));
@@ -61,8 +63,15 @@ BOOST_AUTO_TEST_CASE(GetFeeTest)
     feeRate = CFeeRate(-123);
     // Truncates the result, if not integer
     BOOST_CHECK_EQUAL(feeRate.GetFee(0), CAmount(0));
-    BOOST_CHECK_EQUAL(feeRate.GetFee(8), CAmount(-1)); // Special case: returns -1 instead of 0
+    BOOST_CHECK_EQUAL(feeRate.GetFee(8), CAmount(0));
     BOOST_CHECK_EQUAL(feeRate.GetFee(9), CAmount(-1));
+
+    // GetFeePerK rounds down for fractional rates
+    BOOST_CHECK_EQUAL(CFeeRate(1, 3).GetFeePerK(), CAmount{333});
+    BOOST_CHECK_EQUAL(CFeeRate(-1, 3).GetFeePerK(), CAmount{-334});
+    // GetFee rounds up, so it can differ from GetFeePerK at 1000 vB
+    BOOST_CHECK_EQUAL(CFeeRate(1, 3).GetFee(1000), CAmount{334});
+    BOOST_CHECK_EQUAL(CFeeRate(-1, 3).GetFee(1000), CAmount{-333});
 
     // check alternate constructor
     feeRate = CFeeRate(1000);
@@ -92,6 +101,11 @@ BOOST_AUTO_TEST_CASE(GetFeeTest)
     BOOST_CHECK(CFeeRate(CAmount(27), 789) < CFeeRate(35));
     // Maximum size in bytes, should not crash
     CFeeRate(MAX_MONEY, std::numeric_limits<int32_t>::max()).GetFeePerK();
+
+    // Adding to a zero size fee rate should not crash
+    CFeeRate empty_rate(0, 0);
+    empty_rate += CFeeRate(1, 1);
+    BOOST_CHECK(empty_rate == CFeeRate(1, 1));
 
     // check multiplication operator
     // check multiplying by zero

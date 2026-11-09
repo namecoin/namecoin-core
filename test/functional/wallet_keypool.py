@@ -196,7 +196,7 @@ class KeyPoolTest(BitcoinTestFramework):
         assert_raises_rpc_error(-4, "Transaction needs a change address, but we can't generate it.", w2.walletcreatefundedpsbt, inputs=[], outputs=[{addr.pop(): 0.00005000}], subtractFeeFromOutputs=[0], feeRate=0.00010)
 
         # creating a 10,000 sat transaction without change, with a manual input, should still be possible
-        res = w2.walletcreatefundedpsbt(inputs=w2.listunspent(), outputs=[{destination: 0.00010000}], subtractFeeFromOutputs=[0], feeRate=0.00010)
+        res = w2.walletcreatefundedpsbt(inputs=w2.listunspent(), outputs=[{destination: 0.00010000}], subtract_fee_from_outputs=[0], feeRate=0.00010)
         assert_equal("psbt" in res, True)
 
         # creating a 10,000 sat transaction without change should still be possible
@@ -216,7 +216,7 @@ class KeyPoolTest(BitcoinTestFramework):
         assert_equal(res["fee"], Decimal("0.00009706"))
 
         # creating a 10,000 sat transaction with a manual change address should be possible
-        res = w2.walletcreatefundedpsbt(inputs=[], outputs=[{destination: 0.00010000}], subtractFeeFromOutputs=[0], feeRate=0.00010, changeAddress=addr.pop())
+        res = w2.walletcreatefundedpsbt(inputs=[], outputs=[{destination: 0.00010000}], subtractFeeFromOutputs=[0], feeRate=0.00010, change_address=addr.pop())
         assert_equal("psbt" in res, True)
 
     def test_auxpow(self, nodes):
@@ -249,6 +249,7 @@ class KeyPoolTest(BitcoinTestFramework):
         assert_equal(nodes[0].getwalletinfo()['keypoolsize'], extraKeys)
 
         assert_raises_rpc_error(-12, 'Keypool ran out', nodes[0].getauxblock)
+
 
 if __name__ == '__main__':
     KeyPoolTest(__file__).main()
