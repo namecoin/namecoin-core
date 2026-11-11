@@ -452,8 +452,6 @@ private:
     //! Update mempool conflicts for TRUC sibling transactions
     void UpdateTrucSiblingConflicts(const CWalletTx& parent_wtx, const Txid& child_txid, bool add_conflict) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
 
-    void EffectTransactionQueue();
-
 public:
     /**
      * Main wallet lock.
@@ -1099,15 +1097,6 @@ public:
 
     //! Set the features of the last client to decrypt this wallet
     void SetLastDecryptedFeatures(uint64_t features) EXCLUSIVE_LOCKS_REQUIRED(cs_wallet);
-
-    std::map<Txid, CMutableTransaction> queuedTransactionMap;
-
-    bool QueuedTransactionExists(const Txid &txid) const;
-    bool WriteQueuedTransaction(
-            const Txid &txid,
-            const CMutableTransaction &tx);
-    bool EraseQueuedTransaction(const Txid &txid);
-    bool GetQueuedTransaction(const Txid &txid, CMutableTransaction *data=nullptr) const;
 };
 
 /**
