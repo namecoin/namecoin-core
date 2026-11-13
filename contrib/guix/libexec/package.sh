@@ -38,9 +38,9 @@ set -o errexit -o pipefail
                 ;;
         esac
 
-        # copy over the example bitcoin.conf file. if contrib/devtools/gen-bitcoin-conf.sh
+        # copy over the example namecoin.conf file. if contrib/devtools/gen-bitcoin-conf.sh
         # has not been run before building, this file will be a stub
-        cp "${DISTSRC}/share/examples/bitcoin.conf" "${DISTNAME}/"
+        cp "${DISTSRC}/share/examples/namecoin.conf" "${DISTNAME}/"
 
         cp -r "${DISTSRC}/share/rpcauth" "${DISTNAME}/share/"
 
@@ -88,7 +88,7 @@ set -o errexit -o pipefail
         *mingw*)
             # Make the installer
             cmake -D BIN_DIR="${INSTALLPATH}/bin" -D LIBEXEC_DIR="${INSTALLPATH}/libexec" -P build/GenerateWindowsInstaller.cmake
-            mv build/bitcoin-win64-setup.exe "${OUTDIR}/${DISTNAME}-win64-setup-unsigned.exe"
+            mv build/namecoin-win64-setup.exe "${OUTDIR}/${DISTNAME}-win64-setup-unsigned.exe"
 
             cp -rf --target-directory=. contrib/windeploy
             (
@@ -107,7 +107,7 @@ set -o errexit -o pipefail
             ;;
         *darwin*)
             cmake --build build --target deploy
-            mv build/dist/bitcoin-macos-app.zip "${OUTDIR}/${DISTNAME}-${HOST}-unsigned.zip"
+            mv build/dist/Namecoin-Core.zip "${OUTDIR}/${DISTNAME}-${HOST}-unsigned.zip"
             mkdir -p "unsigned-app-${HOST}"
             cp  --target-directory="unsigned-app-${HOST}" \
                 contrib/macdeploy/detached-sig-create.sh
