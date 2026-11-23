@@ -22,7 +22,7 @@ from test_framework.auxpow_testing import computeAuxpow
 class KeyPoolTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [['-addresstype=bech32']]
+        self.extra_args = [["-deprecatedrpc=encryptwallet", "-addresstype=bech32"]]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
