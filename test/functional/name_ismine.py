@@ -70,16 +70,20 @@ class NameIsMineTest (NameTestFramework):
     assert_equal (p['name'], "d/a")
     assert_equal (p['ismine'], True)
 
-    # name_scan, name_list
+    # name_scan and the legacy name_list view include transferred names.
     self.verifyExpectedIsMineInList (self.node.name_scan ())
-    self.verifyExpectedIsMineInList (self.node.name_list ())
+    self.verifyExpectedIsMineInList (
+        self.node.name_list (None, {"showTransferred": True}))
+    assert_equal ([n["name"] for n in self.node.name_list ()], ["d/a"])
 
     # Test the multiwallet situation.  If no wallet is specified for the RPC,
     # then ismine should not be set at all.
     self.node.createwallet ("extra")
     defaultRpc = self.node.get_wallet_rpc ("default_wallet")
     extraRpc = self.node.get_wallet_rpc ("extra")
-    self.verifyExpectedIsMineInList (defaultRpc.name_list ())
+    self.verifyExpectedIsMineInList (
+        defaultRpc.name_list (None, {"showTransferred": True}))
+    assert_equal ([n["name"] for n in defaultRpc.name_list ()], ["d/a"])
     for nm in ["d/a", "d/b"]:
       assert 'ismine' not in self.node.name_show (nm)
       assert_equal (extraRpc.name_show (nm)['ismine'], False)

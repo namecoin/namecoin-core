@@ -83,7 +83,8 @@ class NameRawTxTest (NameTestFramework):
     data = self.checkName (0, "my-name", "enjoy", None, False)
     info = self.nodes[1].getaddressinfo (data["address"])
     assert info['ismine']
-    data = self.nodes[0].name_list ("my-name")
+    assert_equal (self.nodes[0].name_list ("my-name"), [])
+    data = self.nodes[0].name_list ("my-name", {"showTransferred": True})
     assert_equal (len (data), 1)
     assert_equal (data[0]["name"], "my-name")
     assert_equal (data[0]["ismine"], False)

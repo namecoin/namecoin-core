@@ -43,6 +43,8 @@
 
 #include <algorithm>
 #include <memory>
+#include <optional>
+#include <utility>
 
 namespace wallet
 {
@@ -187,10 +189,14 @@ name_list ()
   NameOptionsHelp optHelp;
   optHelp
       .withNameEncoding ()
-      .withValueEncoding ();
+      .withValueEncoding ()
+      .withArg ("showTransferred", RPCArg::Type::BOOL, "false",
+                "Use the legacy wallet-history view, including transferred and externally re-registered names");
 
   return RPCMethod ("name_list",
-      "Shows the status of all names in the wallet.\n",
+      "Shows the status of names that have been in the wallet.\n"
+      "Transferred and externally re-registered names are hidden unless showTransferred is set.\n"
+      "Expired-name behavior is unchanged.\n",
       {
           {"name", RPCArg::Type::STR, RPCArg::Optional::OMITTED, "Only include this name"},
           optHelp.buildRpcArg (),
@@ -205,6 +211,7 @@ name_list ()
       RPCExamples {
           HelpExampleCli ("name_list", "")
         + HelpExampleCli ("name_list", "\"myname\"")
+        + HelpExampleCli ("name_list", "null '{\"showTransferred\":true}'")
         + HelpExampleRpc ("name_list", "")
       },
       [&] (const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
@@ -220,17 +227,22 @@ name_list ()
   if (request.params.size () >= 2)
     options = request.params[1].get_obj ();
 
-  valtype nameFilter;
+  std::optional<valtype> nameFilter;
   if (request.params.size () >= 1 && !request.params[0].isNull ())
     nameFilter = DecodeNameFromRPCOrThrow (request.params[0], options);
 
-  std::map<valtype, int> mapHeights;
+  bool showTransferred = false;
+  if (options.exists ("showTransferred"))
+    showTransferred = options["showTransferred"].get_bool ();
+
+  std::map<valtype, std::pair<int, int>> mapPositions;
   std::map<valtype, UniValue> mapObjects;
 
   /* Make sure the results are valid at least up to the most recent block
      the user could have gotten from another RPC command prior to now.  */
   pwallet->BlockUntilSyncedToCurrentChain ();
 
+  UniValue res(UniValue::VARR);
   {
   LOCK2 (pwallet->cs_wallet, cs_main);
 
@@ -262,16 +274,19 @@ name_list ()
         continue;
 
       const valtype& name = nameOp.getOpName ();
-      if (!nameFilter.empty () && nameFilter != name)
+      if (nameFilter && *nameFilter != name)
         continue;
 
       const int depth = pwallet->GetTxDepthInMainChain(tx);
       if (depth <= 0)
         continue;
       const int height = tipHeight - depth + 1;
+      const auto* confirmed = tx.state<TxStateConfirmed> ();
+      assert (confirmed != nullptr);
+      const std::pair<int, int> position{height, confirmed->position_in_block};
 
-      const auto mit = mapHeights.find (name);
-      if (mit != mapHeights.end () && mit->second > height)
+      const auto mit = mapPositions.find (name);
+      if (mit != mapPositions.end () && mit->second > position)
         continue;
 
       UniValue obj
@@ -281,14 +296,37 @@ name_list ()
       addOwnershipInfo (nameOp.getAddress (), pwallet, obj);
       addExpirationInfo (chainman, height, obj);
 
-      mapHeights[name] = height;
+      mapPositions[name] = position;
       mapObjects[name] = obj;
     }
-  }
 
-  UniValue res(UniValue::VARR);
+  const auto& coinsTip = chainman.ActiveChainstate ().CoinsTip ();
   for (const auto& item : mapObjects)
-    res.push_back (item.second);
+    {
+      if (showTransferred)
+        {
+          res.push_back (item.second);
+          continue;
+        }
+
+      CNameData data;
+      if (!coinsTip.GetName (item.first, data))
+        {
+          /* Expired names are removed from the name database.  Keep the
+             latest wallet-known entry if its last owner was this wallet.  */
+          if (item.second["ismine"].get_bool ())
+            res.push_back (item.second);
+          continue;
+        }
+
+      if (!pwallet->IsMine (data.getAddress ()))
+        continue;
+
+      UniValue obj = getNameInfo (chainman, options, item.first, data);
+      addOwnershipInfo (data.getAddress (), pwallet, obj);
+      res.push_back (obj);
+    }
+  }
 
   return res;
 }

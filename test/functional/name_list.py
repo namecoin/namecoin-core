@@ -11,7 +11,7 @@ from test_framework.util import *
 class NameListTest (NameTestFramework):
 
   def set_test_params (self):
-    self.setup_name_test ([[]] * 2)
+    self.setup_name_test ([["-limitnamechains=10"], []])
 
   def run_test (self):
     assert_equal (self.nodes[0].name_list (), [])
@@ -29,7 +29,10 @@ class NameListTest (NameTestFramework):
     self.sync_blocks ()
     assert_equal (self.nodes[1].name_list ("name"), [])
 
-    # Transfer the name away and check that name_list updates accordingly.
+    # Transfer the name away.  The default view hides it, while the
+    # showTransferred option retains the legacy wallet-history view.  Mine an
+    # owned update and the transfer in one block to exercise their chain order.
+    self.nodes[0].name_update ("name", "before transfer")
     addrB = self.nodes[1].getnewaddress ()
     self.nodes[0].name_update ("name", "enjoy", {"destAddress":addrB})
     arr = self.nodes[0].name_list ()
@@ -37,7 +40,9 @@ class NameListTest (NameTestFramework):
     self.checkNameStatus (arr[0], "name", "value", False, True)
 
     self.generate (self.nodes[0], 1)
-    arr = self.nodes[0].name_list ()
+    assert_equal (self.nodes[0].name_list (), [])
+    assert_equal (self.nodes[0].name_list ("name"), [])
+    arr = self.nodes[0].name_list ("name", {"showTransferred": True})
     assert_equal (len (arr), 1)
     self.checkNameStatus (arr[0], "name", "enjoy", False, False)
 
@@ -55,7 +60,8 @@ class NameListTest (NameTestFramework):
     self.checkNameStatus (arr[0], "name", "new value", False, True)
 
     self.sync_blocks ()
-    arr = self.nodes[0].name_list ()
+    assert_equal (self.nodes[0].name_list (), [])
+    arr = self.nodes[0].name_list (None, {"showTransferred": True})
     assert_equal (len (arr), 1)
     self.checkNameStatus (arr[0], "name", "enjoy", False, False)
 
@@ -69,11 +75,48 @@ class NameListTest (NameTestFramework):
     assert_equal (len (arr), 1)
     self.checkNameStatus (arr[0], "name", "sent", False, True)
 
+    # Chained updates confirmed in one block should return the latest value,
+    # not an arbitrary one from the wallet's unordered transaction map.
+    for i in range (8):
+      self.nodes[0].name_update ("name", "same block %d" % i)
+    self.generate (self.nodes[0], 1)
+    arr = self.nodes[0].name_list ()
+    assert_equal (len (arr), 1)
+    self.checkNameStatus (arr[0], "name", "same block 7", False, True)
+
     # Let the name expire.
     self.generate (self.nodes[0], 40)
     arr = self.nodes[0].name_list ()
     assert_equal (len (arr), 1)
-    self.checkNameStatus (arr[0], "name", "sent", True, True)
+    self.checkNameStatus (arr[0], "name", "same block 7", True, True)
+
+    # If someone else re-registers the expired name, the default view must
+    # follow current chain ownership rather than the old wallet's history.
+    newB = self.nodes[1].name_new ("name")
+    self.generate (self.nodes[1], 10)
+    self.firstupdateName (1, "name", newB, "re-registered")
+    self.generate (self.nodes[1], 5)
+    self.sync_blocks ()
+    assert_equal (self.nodes[0].name_show ("name")["value"], "re-registered")
+    assert_equal (self.nodes[0].name_list ("name"), [])
+    arr = self.nodes[0].name_list ("name", {"showTransferred": True})
+    assert_equal (len (arr), 1)
+    self.checkNameStatus (arr[0], "name", "same block 7", True, True)
+    arr = self.nodes[1].name_list ("name")
+    assert_equal (len (arr), 1)
+    self.checkNameStatus (arr[0], "name", "re-registered", False, True)
+
+    # An explicit empty name is a filter, not the same as an omitted filter.
+    newEmpty = self.nodes[0].name_new ("")
+    self.generate (self.nodes[0], 10)
+    self.firstupdateName (0, "", newEmpty, "empty value")
+    self.generate (self.nodes[0], 5)
+    arr = self.nodes[0].name_list ("")
+    assert_equal (len (arr), 1)
+    self.checkNameStatus (arr[0], "", "empty value", False, True)
+    assert_equal (len (self.nodes[0].name_list ()), 1)
+    assert_equal (len (self.nodes[0].name_list (
+        None, {"showTransferred": True})), 2)
 
   def checkNameStatus (self, data, name, value, expired, mine):
     """
