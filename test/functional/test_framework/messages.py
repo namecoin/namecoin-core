@@ -261,6 +261,11 @@ def tx_from_hex(hex_string):
     return from_hex(CTransaction(), hex_string)
 
 
+def block_to_header(block_hex):
+    """Extract the block header (including auxpow) from a serialized block."""
+    return CBlockHeader(from_hex(CBlock(), block_hex))
+
+
 def malleate_tx_to_invalid_witness(tx):
     """
     Create a malleated version of the tx where the witness is replaced with garbage data.

@@ -4,6 +4,9 @@
 
 #include <qt/transactiontablemodel.h>
 
+#include <core_io.h>
+#include <interfaces/handler.h>
+#include <names/applications.h>
 #include <qt/addresstablemodel.h>
 #include <qt/bitcoinunits.h>
 #include <qt/clientmodel.h>
@@ -14,15 +17,9 @@
 #include <qt/transactiondesc.h>
 #include <qt/transactionrecord.h>
 #include <qt/walletmodel.h>
-
-#include <core_io.h>
-#include <interfaces/handler.h>
-#include <names/applications.h>
 #include <tinyformat.h>
 #include <uint256.h>
-
-#include <algorithm>
-#include <functional>
+#include <util/check.h>
 
 #include <QColor>
 #include <QDateTime>
@@ -31,6 +28,9 @@
 #include <QLatin1Char>
 #include <QLatin1String>
 #include <QList>
+
+#include <algorithm>
+#include <functional>
 
 
 // Amount column is right-aligned it contains numbers
@@ -530,7 +530,7 @@ QVariant TransactionTableModel::txStatusDecoration(const TransactionRecord *wtx)
     case TransactionStatus::NotAccepted:
         return QIcon(":/icons/transaction_0");
     } // no default case, so the compiler can warn about missing cases
-    assert(false);
+    AssertUnreachable();
 }
 
 QString TransactionTableModel::formatTooltip(const TransactionRecord *rec) const
@@ -563,7 +563,7 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
             return txAddressDecoration(rec);
         case Amount: return {};
         } // no default case, so the compiler can warn about missing cases
-        assert(false);
+        AssertUnreachable();
     case Qt::DecorationRole:
     {
         QIcon icon = qvariant_cast<QIcon>(index.data(RawDecorationRole));
@@ -581,7 +581,7 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
         case Amount:
             return formatTxAmount(rec, true, BitcoinUnits::SeparatorStyle::ALWAYS);
         } // no default case, so the compiler can warn about missing cases
-        assert(false);
+        AssertUnreachable();
     case Qt::EditRole:
         // Edit role is used for sorting, so return the unformatted values
         switch (column) {
@@ -596,7 +596,7 @@ QVariant TransactionTableModel::data(const QModelIndex &index, int role) const
         case Amount:
             return qint64(rec->credit + rec->debit);
         } // no default case, so the compiler can warn about missing cases
-        assert(false);
+        AssertUnreachable();
     case Qt::ToolTipRole:
         return formatTooltip(rec);
     case Qt::TextAlignmentRole:

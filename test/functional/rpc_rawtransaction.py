@@ -21,11 +21,9 @@ from test_framework.messages import (
     COIN,
     TX_MAX_STANDARD_VERSION,
     TX_MIN_STANDARD_VERSION,
-    CBlock,
-    CBlockHeader,
     CTransaction,
     CTxOut,
-    from_hex,
+    block_to_header,
     tx_from_hex,
 )
 from test_framework.script import (
@@ -98,8 +96,7 @@ class RawTransactionsTest(BitcoinTestFramework):
         node = self.nodes[0]
         self.log.info("Test getrawtransaction with a header-only block")
         block = self.generateblock(node, output="raw(55)", transactions=[], submit=False)
-        block_obj = from_hex(CBlock(), block["hex"])
-        node.submitheader(CBlockHeader(block_obj).serialize().hex())
+        node.submitheader(block_to_header(block["hex"]).serialize().hex())
 
         assert_raises_rpc_error(-1, "Block not available (not fully downloaded)", node.getrawtransaction, txid="a" * 64, blockhash=block["hash"])
 

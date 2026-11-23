@@ -40,7 +40,7 @@ class NameDeterministicSaltTest(NameTestFramework):
 
     def set_test_params(self):
         self.setup_clean_chain = True
-        self.setup_name_test ([[]])
+        self.setup_name_test ([["-deprecatedrpc=encryptwallet"]])
 
     def import_vector_keys(self):
         """Import the vector keys into the (descriptor) wallet and return

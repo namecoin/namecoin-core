@@ -28,6 +28,7 @@ class CreateWalletTest(BitcoinTestFramework):
         self.num_nodes = 1
         self.extra_args = [[
           "-addresstype=bech32",
+          "-deprecatedrpc=encryptwallet",
         ]]
 
     def skip_test_if_missing_module(self):
