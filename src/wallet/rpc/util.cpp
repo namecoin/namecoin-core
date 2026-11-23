@@ -98,6 +98,33 @@ WalletContext& EnsureWalletContext(const std::any& context)
     return *wallet_context;
 }
 
+std::shared_ptr<CWallet> MaybeGetWalletForJSONRPCRequest(const JSONRPCRequest& request)
+{
+    /* This helper performs the wallet lookup inside the wallet translation
+       unit, where the RTTI for wallet::WalletContext is canonical.  Calling
+       util::AnyPtr<WalletContext> from a node-side TU can yield a false
+       negative on platforms where the typeid for WalletContext is duplicated
+       across the static node and wallet libraries (notably macOS clang with
+       hidden-default visibility for typeinfo).  Returning a null shared_ptr
+       on absence (rather than throwing RPC_INTERNAL_ERROR) lets callers that
+       treat the wallet as optional (e.g. for an "ismine" annotation) degrade
+       gracefully.  */
+    if (!util::AnyPtr<WalletContext>(request.context)) {
+        return nullptr;
+    }
+    try {
+        return GetWalletForJSONRPCRequest(request);
+    } catch (const UniValue& exc) {
+        const UniValue& code = exc["code"];
+        if (!code.isNum()) throw;
+        const int err = code.getInt<int>();
+        if (err == RPC_WALLET_NOT_FOUND || err == RPC_WALLET_NOT_SPECIFIED) {
+            return nullptr;
+        }
+        throw;
+    }
+}
+
 std::string LabelFromValue(const UniValue& value)
 {
     static const std::string empty_string;
