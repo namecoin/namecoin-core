@@ -28,6 +28,7 @@
 #include <rpc/server_util.h>
 #include <rpc/util.h>
 #include <script/names.h>
+#include <script/signingprovider.h>
 #include <txmempool.h>
 #include <util/moneystr.h>
 #include <util/translation.h>
@@ -36,13 +37,16 @@
 #include <wallet/coincontrol.h>
 #include <wallet/rpc/util.h>
 #include <wallet/rpc/wallet.h>
+#include <wallet/rpc/walletnames.h>
 #include <wallet/scriptpubkeyman.h>
 #include <wallet/wallet.h>
 
 #include <univalue.h>
 
 #include <algorithm>
+#include <map>
 #include <memory>
+#include <vector>
 
 namespace wallet
 {
@@ -316,43 +320,63 @@ getNameSalt(const CKey& key, const valtype& name, valtype& rand)
     return true;
 }
 
-namespace
+/**
+ * Returns the private keys the wallet has for the address of the given
+ * output (with or without a name prefix), ordered by key ID.  A single-key
+ * address has at most one; a multisig address has the keys of this wallet
+ * among the signers; a watch-only or external-signer wallet has none.
+ */
+std::vector<CKey>
+getNameSaltKeys(CWallet* const pwallet, const CScript& output)
 {
+    AssertLockHeld(pwallet->cs_wallet);
+
+    std::map<CKeyID, CKey> keys;
+    for (const auto* spk : pwallet->GetScriptPubKeyMans (output))
+      {
+        if (spk == nullptr)
+            continue;
+
+        /* The signing provider of a descriptor holds the private keys of
+           this wallet for exactly the keys that the address is made of.  */
+        const auto provider = spk->GetSigningProviderWithKeys (output);
+        const auto* flat = dynamic_cast<const FlatSigningProvider*> (provider.get ());
+        if (flat == nullptr)
+            continue;
+
+        for (const auto& [keyid, key] : flat->keys)
+          if (key.IsValid ())
+            keys.emplace (keyid, key);
+      }
+
+    std::vector<CKey> res;
+    res.reserve (keys.size ());
+    for (const auto& [keyid, key] : keys)
+      res.push_back (key);
+    return res;
+}
 
 /**
  * Generate a salt using HKDF for a given name + txout combination.
- * Used in name_new and name_firstupdate.
- * @return True on success, false otherwise
+ * Used in name_new.  With several keys (multisig), the one with the lowest
+ * key ID is used; name_firstupdate tries all of them, see findNameSalt.
+ * @return True on success, false if the wallet has no private key for the
+ *         address of the output
  */
 bool
 getNameSalt(CWallet* const pwallet, const valtype& name, const CScript& output, valtype& rand)
 {
     AssertLockHeld(pwallet->cs_wallet);
 
-    for (const auto* spk : pwallet->GetScriptPubKeyMans (output))
-      {
-        if (spk == nullptr)
-            continue;
+    const auto keys = getNameSaltKeys (pwallet, output);
+    if (keys.empty ())
+        return false;
 
-        auto provider = spk->GetSigningProviderWithKeys (output);
-        if (provider == nullptr)
-            continue;
-
-        CTxDestination dest;
-        CKeyID keyid;
-        CKey key;
-        if (!ExtractDestination(output, dest))
-            continue; // If multisig.
-        assert(IsValidDestination(dest)); // We should never get a null destination.
-
-        keyid = GetKeyForDestination(*provider, dest);
-        provider->GetKey(keyid, key);
-
-        return wallet::getNameSalt(key, name, rand);
-      }
-
-    return false;
+    return wallet::getNameSalt(keys.front (), name, rand);
 }
+
+namespace
+{
 
 bool
 saltMatchesHash(const valtype& name, const valtype& rand, const valtype& expectedHash)
@@ -363,7 +387,57 @@ saltMatchesHash(const valtype& name, const valtype& rand, const valtype& expecte
     return (Hash160(toHash) == uint160(expectedHash));
 }
 
+/**
+ * For addresses without a single private key (e.g. multisig), name_new of
+ * earlier versions used the salt of an empty key as rand, a value that only
+ * depends on the name.  This value is accepted for a name_new output of the
+ * wallet if it matches the commitment, so that such registrations can still
+ * be finished without giving rand.  It is never used for new registrations.
+ * @return True if the value matches; rand is set to it then
+ */
+bool
+getEmptyKeyNameSalt (CWallet* const pwallet, const valtype& name,
+                     const CScript& output, const valtype& hash, valtype& rand)
+    EXCLUSIVE_LOCKS_REQUIRED (pwallet->cs_wallet)
+{
+  AssertLockHeld (pwallet->cs_wallet);
+
+  if (!pwallet->IsMine (output))
+    return false;
+
+  valtype emptyKeyRand;
+  getNameSalt (CKey (), name, emptyKeyRand);
+  if (!saltMatchesHash (name, emptyKeyRand, hash))
+    return false;
+
+  rand = emptyKeyRand;
+  return true;
+}
+
 } // anonymous namespace
+
+/**
+ * Finds the rand of a name_new commitment among the salts of the given keys.
+ * Used by name_firstupdate without rand, with the keys the wallet has for the
+ * address: the one that name_new used is among them, whichever it was.
+ * @return True if a salt matches hash; rand is set to it then
+ */
+bool
+findNameSalt(const std::vector<CKey>& keys, const valtype& name, const valtype& hash, valtype& rand)
+{
+    for (const CKey& key : keys)
+      {
+        valtype cur;
+        getNameSalt (key, name, cur);
+        if (saltMatchesHash (name, cur, hash))
+          {
+            rand = cur;
+            return true;
+          }
+      }
+
+    return false;
+}
 
 /* ************************************************************************** */
 
@@ -656,11 +730,12 @@ name_firstupdate ()
           if (!found)
             continue; // no name outputs found
 
-          if (!fixedRand)
-            {
-              if (!getNameSalt (pwallet, name, output, rand)) // we don't have the private key for that output
-                continue;
-            }
+          if (!fixedRand
+                && !findNameSalt (getNameSaltKeys (pwallet, output), name,
+                                  nameOp.getOpHash (), rand)
+                && !getEmptyKeyNameSalt (pwallet, name, output,
+                                         nameOp.getOpHash (), rand))
+            continue; // no rand of ours matches that output
 
           if (!saltMatchesHash (name, rand, nameOp.getOpHash ()))
             continue;
@@ -694,11 +769,15 @@ name_firstupdate ()
     {
       LOCK (pwallet->cs_wallet);
       EnsureWalletIsUnlocked (*pwallet);
-      bool saltOK = getNameSalt (pwallet, name, prevOut.scriptPubKey, rand);
-      if (!saltOK)
-          throw JSONRPCError (RPC_TRANSACTION_ERROR, "could not generate rand for txid");
-      if (!saltMatchesHash (name, rand, prevNameOp.getOpHash ()))
-        throw JSONRPCError (RPC_TRANSACTION_ERROR, "generated rand for txid does not match");
+      const auto keys = getNameSaltKeys (pwallet, prevOut.scriptPubKey);
+      if (!findNameSalt (keys, name, prevNameOp.getOpHash (), rand)
+            && !getEmptyKeyNameSalt (pwallet, name, prevOut.scriptPubKey,
+                                     prevNameOp.getOpHash (), rand))
+        {
+          if (keys.empty ())
+            throw JSONRPCError (RPC_TRANSACTION_ERROR, "could not generate rand for txid");
+          throw JSONRPCError (RPC_TRANSACTION_ERROR, "generated rand for txid does not match");
+        }
     }
 
   if (!saltMatchesHash (name, rand, prevNameOp.getOpHash ()))
